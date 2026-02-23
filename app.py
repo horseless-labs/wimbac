@@ -28,6 +28,10 @@ def api_vehicles():
     # call function from merge_feeds.py
     data = merge_trip_updates_and_positions(update_url, pos_url)
 
+    # Save to InfluxDB
+    save_to_influx(data)
+    print("Transit data saved to influx")
+
     valid_data = [v for v in data if v.get('lat') and v.get('lon')]
     return jsonify(valid_data)
 

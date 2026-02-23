@@ -1,6 +1,9 @@
 from google.transit import gtfs_realtime_pb2
 from google.protobuf.json_format import MessageToDict
 
+from influxdb_client import InfluxDBClient, Point, WritePrecision
+from influxdb_client.client.write_api import SYNCHRONOUS
+
 import requests
 from datetime import datetime, timezone
 
@@ -10,6 +13,15 @@ import json
 pos_url = "https://gtfs-rt.gcrta.vontascloud.com/TMGTFSRealTimeWebService/Vehicle/VehiclePositions.pb"
 update_url = "https://gtfs-rt.gcrta.vontascloud.com/TMGTFSRealTimeWebService/TripUpdate/TripUpdates.pb"
 alert_url = "https://gtfs-rt.gcrta.vontascloud.com/TMGTFSRealTimeWebService/Alert/Alerts.pb"
+
+# InfluxDB stuff
+with open("influx_token.txt") as f:
+    influx_token = f.read().strip()
+
+org = "Horseless Labs"
+bucket = "wimbac"
+client = InfluxDBClient(url="http://localhost:8086", token=influx_token, org=org)
+write_api = client.write_api(write_options=SYNCHRONOUS)
 
 # TODO: add headers and retries to solve potential ConnectionResetErrors
 def load_feed(url):
@@ -161,8 +173,33 @@ def merge_trip_updates_and_positions(update_url, pos_url):
 
     return merged
 
+def save_to_influx(merged_data):
+    points = []
+    for row in merged_data:
+        # Vehicle data
+        point = Point("vehicle_status") \
+            .tag("vehicle_id", row["vehicle_id"]) \
+            .tag("route_id", row["route_id"]) \
+            .field("lat", float(row["lat"]) if row["lat"] else 0.0) \
+            .field("lon", float(row["lon"]) if row["lon"] else 0.0) \
+            .time(datetime.now(timezone.utc), WritePrecision.NS)
+
+        # 2. Add delay from the first relevant StopTimeUpdate
+        if row["stop_time_updates"]:
+            first_update = row["stop_time_updates"][0]
+            # Capture the delay (usually in seconds) if provided
+            delay = first_update.get("arrival", {}).get("delay") or \
+                    first_update.get("departure", {}).get("delay", 0)
+            point.field("delay_seconds", int(delay))
+            point.tag("next_stop_id", first_update.get("stop_id"))
+
+        points.append(point)
+    
+    write_api.write(bucket=bucket, org=org, record=points)
+
 if __name__ == '__main__':
     merged = merge_trip_updates_and_positions(update_url, pos_url)
+    save_to_influx(merged)
     # Only output a single updated line (they are quite long)
     for row in merged[:1]:
         print(json.dumps(row, indent=2, sort_keys=True, default=str))
