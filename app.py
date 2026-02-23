@@ -21,6 +21,8 @@ def get_bus_data():
 
     return jsonify(live_vehicles)
 
+# TODO: add try/except block to catch GCRTA server being down
+#       instead of a 500 internal server error page.
 @app.route('/api/vehicles')
 def api_vehicles():
     # call function from merge_feeds.py

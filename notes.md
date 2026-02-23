@@ -5,7 +5,8 @@ terminal commands to save two samples to make sure things were being updated
 properly.
 
 ## 2019
-Basic map is up. Ran into the following error at 30-second intervals:
+Basic map is up. Ran into the following error at 15-second intervals, and
+changed to 30-second intervals to good effect:
 
 ```Traceback (most recent call last):
   File "/home/mireles/horseless/wimbac3/.venv/lib/python3.13/site-packages/urllib3/response.py", line 903, in _error_catcher

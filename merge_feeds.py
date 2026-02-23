@@ -11,6 +11,7 @@ pos_url = "https://gtfs-rt.gcrta.vontascloud.com/TMGTFSRealTimeWebService/Vehicl
 update_url = "https://gtfs-rt.gcrta.vontascloud.com/TMGTFSRealTimeWebService/TripUpdate/TripUpdates.pb"
 alert_url = "https://gtfs-rt.gcrta.vontascloud.com/TMGTFSRealTimeWebService/Alert/Alerts.pb"
 
+# TODO: add headers and retries to solve potential ConnectionResetErrors
 def load_feed(url):
     response = requests.get(url, timeout=10)
     response.raise_for_status()
