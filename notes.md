@@ -88,3 +88,34 @@ Traceback (most recent call last):
     raise ChunkedEncodingError(e)
 requests.exceptions.ChunkedEncodingError: ("Connection broken: ConnectionResetError(104, 'Connection reset by peer')", ConnectionResetError(104, 'Connection reset by peer'))
 ```
+
+## 2040
+Notes on setting up InfluxDB **without a Docker container**.
+
+```
+pip install influxdb-client
+pip freeze > requirements.txt
+```
+
+Add InfluxData repository:
+
+```
+curl -fsSL https://repos.influxdata.com/influxdata-archive_compat-exp2029.key
+sudo gpg --dearmor -o /etc/apt/keyrings/influxdata-archive.gpg
+
+echo 'deb [signed-by=/etc/apt/keyrings/influxdata-archive.gpg] https://repos.influxdata.com/debian stable main'
+sudo tee /etc/apt/sources.list.d/influxdata.list
+```
+
+```
+sudo apt update
+sudo apt install influxdb2
+```
+
+```
+sudo systemctl enable influxdb
+sudo systemctl start influxdb
+sudo systemctl status influxdb
+```
+
+Visit localhost:8086
