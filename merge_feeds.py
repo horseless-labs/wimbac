@@ -162,5 +162,6 @@ def merge_trip_updates_and_positions(update_url, pos_url):
 
 if __name__ == '__main__':
     merged = merge_trip_updates_and_positions(update_url, pos_url)
+    # Only output a single updated line (they are quite long)
     for row in merged[:1]:
         print(json.dumps(row, indent=2, sort_keys=True, default=str))

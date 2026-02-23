@@ -1,0 +1,557 @@
+{
+  "bearing": 315.0,
+  "current_status": null,
+  "current_stop_sequence": null,
+  "direction_id": 5,
+  "lat": 41.41322326660156,
+  "lon": -81.53623962402344,
+  "route_id": "41",
+  "speed_mps": 0.0,
+  "start_date": "20260222",
+  "stop_id": null,
+  "stop_time_updates": [
+    {
+      "departure": {
+        "time": "1771806300"
+      },
+      "stop_id": "00141",
+      "stop_sequence": 1,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806300"
+      },
+      "stop_id": "11598",
+      "stop_sequence": 2,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806360"
+      },
+      "stop_id": "11780",
+      "stop_sequence": 3,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806420"
+      },
+      "stop_id": "14751",
+      "stop_sequence": 4,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806420"
+      },
+      "stop_id": "08537",
+      "stop_sequence": 5,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806480"
+      },
+      "stop_id": "08550",
+      "stop_sequence": 6,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806480"
+      },
+      "stop_id": "08566",
+      "stop_sequence": 7,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806540"
+      },
+      "stop_id": "08541",
+      "stop_sequence": 8,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806540"
+      },
+      "stop_id": "08572",
+      "stop_sequence": 9,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806660"
+      },
+      "stop_id": "08530",
+      "stop_sequence": 10,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806720"
+      },
+      "stop_id": "14760",
+      "stop_sequence": 11,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806720"
+      },
+      "stop_id": "01327",
+      "stop_sequence": 12,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806780"
+      },
+      "stop_id": "01310",
+      "stop_sequence": 13,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806780"
+      },
+      "stop_id": "08525",
+      "stop_sequence": 14,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806840"
+      },
+      "stop_id": "08557",
+      "stop_sequence": 15,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806840"
+      },
+      "stop_id": "08516",
+      "stop_sequence": 16,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806900"
+      },
+      "stop_id": "08565",
+      "stop_sequence": 17,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806900"
+      },
+      "stop_id": "08543",
+      "stop_sequence": 18,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806960"
+      },
+      "stop_id": "14670",
+      "stop_sequence": 19,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771806960"
+      },
+      "stop_id": "14420",
+      "stop_sequence": 20,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807020"
+      },
+      "stop_id": "08540",
+      "stop_sequence": 21,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807020"
+      },
+      "stop_id": "08573",
+      "stop_sequence": 22,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807020"
+      },
+      "stop_id": "08563",
+      "stop_sequence": 23,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807080"
+      },
+      "stop_id": "11130",
+      "stop_sequence": 24,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807140"
+      },
+      "stop_id": "14515",
+      "stop_sequence": 25,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807200"
+      },
+      "stop_id": "08535",
+      "stop_sequence": 26,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807260"
+      },
+      "stop_id": "08585",
+      "stop_sequence": 27,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807260"
+      },
+      "stop_id": "08582",
+      "stop_sequence": 28,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807380"
+      },
+      "stop_id": "14698",
+      "stop_sequence": 29,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807440"
+      },
+      "stop_id": "08579",
+      "stop_sequence": 30,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807500"
+      },
+      "stop_id": "10917",
+      "stop_sequence": 31,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807500"
+      },
+      "stop_id": "00854",
+      "stop_sequence": 32,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807560"
+      },
+      "stop_id": "08561",
+      "stop_sequence": 33,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807620"
+      },
+      "stop_id": "14671",
+      "stop_sequence": 34,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807680"
+      },
+      "stop_id": "08591",
+      "stop_sequence": 35,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807680"
+      },
+      "stop_id": "08553",
+      "stop_sequence": 36,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807740"
+      },
+      "stop_id": "08519",
+      "stop_sequence": 37,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807740"
+      },
+      "stop_id": "08523",
+      "stop_sequence": 38,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807800"
+      },
+      "stop_id": "08589",
+      "stop_sequence": 39,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807800"
+      },
+      "stop_id": "14672",
+      "stop_sequence": 40,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807860"
+      },
+      "stop_id": "08545",
+      "stop_sequence": 41,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807860"
+      },
+      "stop_id": "08513",
+      "stop_sequence": 42,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807920"
+      },
+      "stop_id": "08547",
+      "stop_sequence": 43,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771807980"
+      },
+      "stop_id": "06146",
+      "stop_sequence": 44,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808040"
+      },
+      "stop_id": "11055",
+      "stop_sequence": 45,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808040"
+      },
+      "stop_id": "06364",
+      "stop_sequence": 46,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808040"
+      },
+      "stop_id": "06357",
+      "stop_sequence": 47,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808100"
+      },
+      "stop_id": "06362",
+      "stop_sequence": 48,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808160"
+      },
+      "stop_id": "06371",
+      "stop_sequence": 49,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808160"
+      },
+      "stop_id": "06385",
+      "stop_sequence": 50,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808220"
+      },
+      "stop_id": "06381",
+      "stop_sequence": 51,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808280"
+      },
+      "stop_id": "06392",
+      "stop_sequence": 52,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808340"
+      },
+      "stop_id": "06369",
+      "stop_sequence": 53,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808340"
+      },
+      "stop_id": "06391",
+      "stop_sequence": 54,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808340"
+      },
+      "stop_id": "06376",
+      "stop_sequence": 55,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808400"
+      },
+      "stop_id": "06383",
+      "stop_sequence": 56,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808460"
+      },
+      "stop_id": "06374",
+      "stop_sequence": 57,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808460"
+      },
+      "stop_id": "06388",
+      "stop_sequence": 58,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808520"
+      },
+      "stop_id": "04533",
+      "stop_sequence": 59,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808580"
+      },
+      "stop_id": "04390",
+      "stop_sequence": 60,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808640"
+      },
+      "stop_id": "04562",
+      "stop_sequence": 61,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808640"
+      },
+      "stop_id": "04553",
+      "stop_sequence": 62,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808700"
+      },
+      "stop_id": "04558",
+      "stop_sequence": 63,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808760"
+      },
+      "stop_id": "04535",
+      "stop_sequence": 64,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808760"
+      },
+      "stop_id": "04579",
+      "stop_sequence": 65,
+      "stop_time_properties": {}
+    },
+    {
+      "departure": {
+        "time": "1771808820"
+      },
+      "stop_id": "04397",
+      "stop_sequence": 66,
+      "stop_time_properties": {}
+    },
+    {
+      "arrival": {
+        "time": "1771808880"
+      },
+      "stop_id": "14507",
+      "stop_sequence": 67,
+      "stop_time_properties": {}
+    }
+  ],
+  "trip_id": "18945838",
+  "tu_timestamp": 1771806166,
+  "tu_timestamp_iso": "2026-02-23T00:22:46+00:00",
+  "vehicle_id": "2380",
+  "vehicle_label": "3302",
+  "vp_timestamp": 1771806166,
+  "vp_timestamp_iso": "2026-02-23T00:22:46+00:00"
+}
