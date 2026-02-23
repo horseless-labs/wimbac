@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Real-time GTFS Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>#map { height: 100vh; }</style>
+</head>
+<body>
+    <div id="map"></div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const map = L.map('map').setView([41.4993, -81.6944], 12); // Cleveland coords
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        let markers = {};
+
+        async function updateMarkers() {
+            const response = await fetch('/api/vehicles');
+            const data = await response.json();
+
+            data.forEach(v => {
+                const id = v.vehicle_id;
+                if (markers[id]) {
+                    markers[id].setLatLng([v.lat, v.lon]);
+                } else {
+                    markers[id] = L.marker([v.lat, v.lon])
+                        .addTo(map)
+                        .bindPopup(`Bus: ${v.vehicle_label}<br>Route: ${v.route_id}`);
+                }
+            });
+        }
+
+        setInterval(updateMarkers, 15000); // Refresh every 15s
+        updateMarkers();
+    </script>
+</body>
+</html>
