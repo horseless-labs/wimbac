@@ -100,11 +100,11 @@ pip freeze > requirements.txt
 Add InfluxData repository:
 
 ```
-curl -fsSL https://repos.influxdata.com/influxdata-archive_compat-exp2029.key
-sudo gpg --dearmor -o /etc/apt/keyrings/influxdata-archive.gpg
+curl -fsSL https://repos.influxdata.com/influxdata-archive.key \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/influxdata-archive.gpg
 
-echo 'deb [signed-by=/etc/apt/keyrings/influxdata-archive.gpg] https://repos.influxdata.com/debian stable main'
-sudo tee /etc/apt/sources.list.d/influxdata.list
+echo 'deb [signed-by=/etc/apt/keyrings/influxdata-archive.gpg] https://repos.influxdata.com/debian stable main' \
+| sudo tee /etc/apt/sources.list.d/influxdata.list
 ```
 
 ```
