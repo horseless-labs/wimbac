@@ -119,3 +119,154 @@ sudo systemctl status influxdb
 ```
 
 Visit localhost:8086
+
+# 2026-03-01
+We have [Realtime GTFS Map](http://wimbac.com/) up after a great deal of fighting with DNS through Namecheap.
+## WIMBAC – Infrastructure & Service Setup Notes
+
+This session transitioned WIMBAC from a manually run local script into a persistent, server-backed service with InfluxDB running on a remote Ubuntu instance.
+
+Below are the exact locations of the relevant system components.
+## InfluxDB Installation & Configuration
+
+### APT Repository Configuration
+
+InfluxDB was installed via the official InfluxData Debian repository.
+
+Relevant files:
+- Repository entry:
+    `/etc/apt/sources.list.d/influxdata.list`
+- GPG keyring used for signature verification:
+    `/etc/apt/keyrings/influxdata-archive.gpg`
+
+If Influx installation ever breaks again, these are the first two places to inspect.
+### InfluxDB Data Storage
+
+InfluxDB v2 stores its data and metadata under:
+
+- Bolt metadata store:
+    `/root/.influxdbv2/influxd.bolt`
+- Engine data directory:
+    `/root/.influxdbv2/engine/`
+
+If the database appears “empty” or corrupted, this directory is the physical storage location.
+### InfluxDB Service
+
+InfluxDB runs as a systemd service.
+
+Service name:
+
+```
+influxdb
+```
+
+Useful commands:
+
+```
+sudo systemctl status influxdb
+sudo systemctl restart influxdb
+sudo journalctl -u influxdb -f
+```
+
+## WIMBAC Service Configuration
+
+WIMBAC is now managed by systemd rather than being run manually.
+
+### Service Definition File
+
+The service file is located at:
+
+```
+/etc/systemd/system/wimbac.service
+```
+
+This file defines:
+- `WorkingDirectory`
+- `ExecStart`
+- `User`
+- `Environment=` variables
+- Restart policy
+
+If environment variables need to change, this is where they are defined.
+
+After modifying it:
+
+```
+sudo systemctl daemon-reload
+sudo systemctl restart wimbac
+```
+
+### WIMBAC Application Directory
+
+```
+/home/mireles/wimbac/
+```
+
+Inside that directory:
+- Flask app
+- GTFS-RT ingestion code
+- Any static files
+- Requirements file
+- Virtual environment (if used)
+
+This directory is referenced in the `WorkingDirectory=` field inside the service file.
+
+### Environment Variables
+
+Environment variables (Influx URL, token, org, bucket, etc.) are defined directly in:
+
+```
+/etc/systemd/system/wimbac.service
+```
+
+Example structure inside the service file:
+
+```
+Environment="INFLUX_URL=http://localhost:8086"
+Environment="INFLUX_TOKEN=..."
+Environment="INFLUX_ORG=..."
+Environment="INFLUX_BUCKET=..."
+```
+
+These are injected into the process at runtime.
+
+They are **not** hardcoded into the application source.
+### WIMBAC Service Management
+
+Service name:
+
+```
+wimbac
+```
+
+Useful commands:
+
+```
+sudo systemctl status wimbac
+sudo systemctl restart wimbac
+sudo journalctl -u wimbac -f
+```
+
+If ingestion ever silently stops, check the logs here first.
+
+## Current System Architecture
+
+On the server:
+- InfluxDB runs as a systemd-managed database service.
+- WIMBAC runs as a systemd-managed ingestion service.
+- WIMBAC writes GTFS-RT data to InfluxDB at `localhost:8086`.
+- Data persists under `/root/.influxdbv2/`.
+
+There is no manual process required to start ingestion.  
+If the server reboots, both services restart automatically.
+
+Future debugging map:
+
+If ingestion fails:
+1. Check `wimbac` service logs.
+2. Check `influxdb` service status.
+3. Verify environment variables in `wimbac.service`.
+4. Confirm Influx is listening on port 8086.
+5. Inspect `/root/.influxdbv2/` if data integrity is suspected
+
+That’s the operational memory of tonight.
