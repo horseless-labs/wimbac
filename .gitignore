@@ -1,3 +1,4 @@
 *.swp
 *.pyc
 influx_token.txt
+influx_config.txt

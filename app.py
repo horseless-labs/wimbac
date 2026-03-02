@@ -1,4 +1,5 @@
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, Response
+import os
 
 # TODO: make this less sloppy later
 from merge_feeds import *
@@ -34,6 +35,24 @@ def api_vehicles():
 
     valid_data = [v for v in data if v.get('lat') and v.get('lon')]
     return jsonify(valid_data)
+
+@app.route("/health")
+def health():
+    return Response(
+        f"""
+        <html>
+            <head>
+                <title>WIMBAC Health</title>
+            </head>
+            <body style="font-family: monospace; background:#111; color:#0f0;">
+                <h1>WIMBAC is alive.</h1>
+                <p>Host: {os.uname().nodename}</p>
+                <p>Process ID: {os.getpid()}</p>
+            </body>
+        </html>
+        """,
+        mimetype="text/html",
+    )
 
 if __name__ == '__main__':
     # 0.0.0.0 makes it accessible locally

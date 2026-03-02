@@ -8,6 +8,7 @@ import requests
 from datetime import datetime, timezone
 
 import json
+import os
 
 # Endpoint to check
 pos_url = "https://gtfs-rt.gcrta.vontascloud.com/TMGTFSRealTimeWebService/Vehicle/VehiclePositions.pb"
@@ -15,11 +16,10 @@ update_url = "https://gtfs-rt.gcrta.vontascloud.com/TMGTFSRealTimeWebService/Tri
 alert_url = "https://gtfs-rt.gcrta.vontascloud.com/TMGTFSRealTimeWebService/Alert/Alerts.pb"
 
 # InfluxDB stuff
-with open("influx_token.txt") as f:
-    influx_token = f.read().strip()
+influx_token = os.environ["INFLUX_TOKEN"]
+org = os.environ["INFLUX_ORG"]
+bucket = os.environ["INFLUX_BUCKET"]
 
-org = "Horseless Labs"
-bucket = "wimbac"
 client = InfluxDBClient(url="http://localhost:8086", token=influx_token, org=org)
 write_api = client.write_api(write_options=SYNCHRONOUS)
 
