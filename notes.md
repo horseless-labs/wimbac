@@ -270,3 +270,18 @@ If ingestion fails:
 5. Inspect `/root/.influxdbv2/` if data integrity is suspected
 
 That’s the operational memory of tonight.
+
+# 2026-03-02
+## 2000
+Created fetch_gtfs_static.py, which downloads the relevant schedule data from
+https://www.riderta.com/sites/default/files/gtfs/latest/google_transit.zip
+and saves it into data/raw.
+
+Main targets there will probably be stops.txt, trips.txt, and possibly
+routes.txt.
+
+## 2039
+Interface consideration: it might be better to have a user start looking
+at a map with static stops, instead of the cluster of vehicles that is
+currently displayed by default. They can then select a stop or route, which
+can then trigger the display of relevant vehicles.
