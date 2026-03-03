@@ -1,8 +1,9 @@
-from flask import Flask, render_template, jsonify, Response
+from flask import Flask, render_template, jsonify, Response, request
 import os
 
 # TODO: make this less sloppy later
 from merge_feeds import *
+from stops import load_stops
 
 app = Flask(__name__)
 
@@ -35,6 +36,26 @@ def api_vehicles():
 
     valid_data = [v for v in data if v.get('lat') and v.get('lon')]
     return jsonify(valid_data)
+
+STOPS = load_stops()
+@app.get("api/stops")
+def api_stops():
+    # otpional bbox filtering
+    min_lat = request.args.get("min_lat", type=float)
+    max_lat = request.args.get("max_lat", type=float)
+    min_lon = request.args.get("min_lon", type=float)
+    max_lon = request.args.get("max_lon", type=float)
+
+    if None in (min_lat, max_lat, min_lon, max_lon):
+        return jsonify(STOPS[:2000])
+    
+    out = [
+        s for s in STOPS
+        if (min_lat <= s["lat"] <= max_lat) and (min_lon <= s["lon"] <= max_lon)
+        and s["location_type"] == 0
+    ]
+
+    return jsonify(out)
 
 @app.route("/health")
 def health():

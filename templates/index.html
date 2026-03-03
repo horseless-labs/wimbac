@@ -9,29 +9,139 @@
     <div id="map"></div>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        const map = L.map('map').setView([41.4993, -81.6944], 12); // Cleveland coords
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    // --- Map init ---
+    const map = L.map('map').setView([41.4993, -81.6944], 12); // Cleveland
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
 
-        let markers = {};
+    // --- Layers ---
+    const stopLayer = L.layerGroup().addTo(map);
+    const vehicleLayer = L.layerGroup().addTo(map);
 
-        async function updateMarkers() {
-            const response = await fetch('/api/vehicles');
-            const data = await response.json();
+    // --- State ---
+    let selectedStop = null;
+    let vehiclesTimer = null;
 
-            data.forEach(v => {
-                const id = v.vehicle_id;
-                if (markers[id]) {
-                    markers[id].setLatLng([v.lat, v.lon]);
-                } else {
-                    markers[id] = L.marker([v.lat, v.lon])
-                        .addTo(map)
-                        .bindPopup(`Bus: ${v.vehicle_label}<br>Route: ${v.route_id}`);
-                }
-            });
+    // Tuning knobs
+    const STOPS_MIN_ZOOM = 13;        // don't draw stops until zoomed in
+    const STOPS_REFRESH_MS = 1500;    // debounce-ish: only on moveend/zoomend anyway
+    const VEHICLE_REFRESH_MS = 15000; // vehicles update once a stop is selected
+    const VEHICLE_RADIUS_M = 800;     // "near stop" radius
+
+    // --- Helpers ---
+    function boundsToQuery(bounds) {
+        // Leaflet bounds: south/west/north/east
+        const s = bounds.getSouth();
+        const w = bounds.getWest();
+        const n = bounds.getNorth();
+        const e = bounds.getEast();
+        return `min_lat=${s}&max_lat=${n}&min_lon=${w}&max_lon=${e}`;
+    }
+
+    function clearVehicles() {
+        vehicleLayer.clearLayers();
+        if (vehiclesTimer) {
+        clearInterval(vehiclesTimer);
+        vehiclesTimer = null;
+        }
+    }
+
+    // --- Stops: fetch and draw for current viewport ---
+    async function fetchStopsForViewport() {
+        if (map.getZoom() < STOPS_MIN_ZOOM) {
+        stopLayer.clearLayers();
+        return;
         }
 
-        setInterval(updateMarkers, 30000); // Refresh every 30s
-        updateMarkers();
+        const q = boundsToQuery(map.getBounds());
+        const url = `/api/stops?${q}`;
+
+        try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Stops fetch failed: ${res.status}`);
+        const stops = await res.json();
+
+        stopLayer.clearLayers();
+
+        stops.forEach(s => {
+            const dot = L.circleMarker([s.lat, s.lon], {
+            radius: 4,
+            weight: 1,
+            fillOpacity: 0.7
+            });
+
+            dot.on('click', () => selectStop(s));
+            dot.bindTooltip(s.stop_name, { direction: 'top', offset: [0, -4] });
+
+            dot.addTo(stopLayer);
+        });
+        } catch (err) {
+        console.error(err);
+        // Don't spam UI; just keep prior layer state or empty.
+        }
+    }
+
+    // --- Stop selection: set state and start vehicle polling ---
+    async function selectStop(stop) {
+        selectedStop = stop;
+
+        // Visual feedback: open a popup at the stop
+        L.popup()
+        .setLatLng([stop.lat, stop.lon])
+        .setContent(`<b>${stop.stop_name}</b><br>Stop ID: ${stop.stop_id}`)
+        .openOn(map);
+
+        // Immediately fetch vehicles for this stop, then start polling
+        await updateVehiclesNearSelectedStop();
+
+        clearVehicles(); // clears old timer + layers; we'll repopulate below
+
+        vehiclesTimer = setInterval(updateVehiclesNearSelectedStop, VEHICLE_REFRESH_MS);
+    }
+
+    // --- Vehicles: fetch and draw near selected stop ---
+    async function updateVehiclesNearSelectedStop() {
+        if (!selectedStop) return;
+
+        const url = `/api/vehicles_near?lat=${selectedStop.lat}&lon=${selectedStop.lon}&r_m=${VEHICLE_RADIUS_M}`;
+
+        try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Vehicles fetch failed: ${res.status}`);
+        const vehicles = await res.json();
+
+        vehicleLayer.clearLayers();
+
+        vehicles.forEach(v => {
+            const m = L.marker([v.lat, v.lon]).addTo(vehicleLayer);
+
+            const label = v.vehicle_label ? `Bus: ${v.vehicle_label}` : 'Bus';
+            const route = v.route_id ? `Route: ${v.route_id}` : 'Route: ?';
+
+            m.bindPopup(`${label}<br>${route}`);
+        });
+        } catch (err) {
+        console.error(err);
+        // Keep last known vehicle markers rather than clearing on error.
+        }
+    }
+
+    // --- Events ---
+    // Re-fetch stops when user pans/zooms.
+    // moveend fires after pan/zoom animation ends.
+    let stopsRefreshTimeout = null;
+    function scheduleStopsRefresh() {
+        if (stopsRefreshTimeout) clearTimeout(stopsRefreshTimeout);
+        stopsRefreshTimeout = setTimeout(fetchStopsForViewport, STOPS_REFRESH_MS);
+    }
+
+    map.on('moveend', scheduleStopsRefresh);
+    map.on('zoomend', scheduleStopsRefresh);
+
+    // Initial draw
+    fetchStopsForViewport();
     </script>
 </body>
 </html>
