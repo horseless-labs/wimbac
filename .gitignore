@@ -1,4 +1,9 @@
+__pycache__/
 *.swp
 *.pyc
+*.venv
 influx_token.txt
-influx_config.txt
+
+# Raw GTFS data
+data/raw/
+*.zip
