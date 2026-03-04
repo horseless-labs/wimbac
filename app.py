@@ -1,11 +1,24 @@
 from flask import Flask, render_template, jsonify, Response, request
 import os
+import math
 
 # TODO: make this less sloppy later
 from merge_feeds import *
 from stops import load_stops
 
 app = Flask(__name__)
+
+# Calculates spherical distance between two points
+def haversine_m(lat1, lon1, lat2, lon2):
+    R = 6371000
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+
+    a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda/2)**2
+
+    return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 @app.route('/')
 def home():
