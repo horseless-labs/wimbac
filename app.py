@@ -5,6 +5,7 @@ import math
 # vehicle position caching stuff
 import time
 import threading
+import requests
 
 # TODO: make this less sloppy later
 from merge_feeds import *
@@ -32,11 +33,7 @@ def haversine_m(lat1, lon1, lat2, lon2):
 
     return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-# Refreshes vehicle position cache
-import time
-import threading
-import requests
-
+# vehicle position cache stuff
 LATEST_VEHICLES = []
 LATEST_VEHICLES_TS = 0.0
 LATEST_LOCK = threading.Lock()

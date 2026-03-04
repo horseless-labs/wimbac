@@ -285,3 +285,28 @@ Interface consideration: it might be better to have a user start looking
 at a map with static stops, instead of the cluster of vehicles that is
 currently displayed by default. They can then select a stop or route, which
 can then trigger the display of relevant vehicles.
+
+# 2026-03-03
+## 2120
+Noticed extremely cluttered interface when the site populated the map with
+all available vehicle positions. The first and most sensible step to address
+this was to allow a user to select a given stop, then have relevant
+vehicles populate the map. Implemented proof-of-concept of just looking at
+all vehicles withing a great circle distance of the selected stop, but this
+will likely be refined to be replaced by or relegated to a supporting role
+to the actual routes.
+
+Implemented a simple caching mechanism for vehicle positions in app.py. Added
+refresh_latest_vehicles_if_stale(), which is now called by
+`/api/vehicles`, `/api/vehicles_near`, and `/api/vehicles_nearest`. The
+cache was meant to decouple user requests from ingestion of vehicle data.
+
+Added try-catch logic to requests for GTFS-RT data and saving to Influx.
+
+Large expansion of `index.html` for stop clicking logic, addition of user
+hints, and clearer graphics. Currently:
+- Small blue circles for stops.
+- Hollow blue circles for a selected stop.
+- Large blue circle for vehicles.
+
+Considering adding a CSS stylesheet.
