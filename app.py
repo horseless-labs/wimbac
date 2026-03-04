@@ -38,7 +38,7 @@ def api_vehicles():
     return jsonify(valid_data)
 
 STOPS = load_stops()
-@app.get("api/stops")
+@app.get("/api/stops")
 def api_stops():
     # otpional bbox filtering
     min_lat = request.args.get("min_lat", type=float)
