@@ -113,7 +113,7 @@ def api_vehicles():
 def api_vehicles_near():
     lat = request.args.get("lat", type=float)
     lon = request.args.get("lon", type=float)
-    r_m = request.args.get("r_m", default=800.0, type=float)
+    r_m = request.args.get("r_m", default=5000.0, type=float)
 
     if lat is None or lon is None:
         return jsonify([])
@@ -132,6 +132,38 @@ def api_vehicles_near():
         if d <= r_m:
             out.append(v)
     
+    return jsonify(out)
+
+@app.get("/api/vehicles_nearest")
+def api_vehicles_nearest():
+    lat = request.args.get("lat", type=float)
+    lon = request.args.get("lon", type=float)
+    n = request.args.get("n", default=10, type=int)
+
+    if lat is None or lon is None:
+        return jsonify([])
+
+    refresh_latest_vehicles_if_stale()
+
+    with LATEST_LOCK:
+        vehicles = list(LATEST_VEHICLES)
+
+    scored = []
+    for v in vehicles:
+        try:
+            d = haversine_m(lat, lon, float(v["lat"]), float(v["lon"]))
+        except Exception:
+            continue
+        scored.append((d, v))
+
+    scored.sort(key=lambda x: x[0])
+
+    out = []
+    for d, v in scored[:max(0, n)]:
+        vv = dict(v)
+        vv["distance_m"] = round(d, 1)
+        out.append(vv)
+
     return jsonify(out)
 
 @app.get("/api/stops")
