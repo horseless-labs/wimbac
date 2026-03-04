@@ -2,11 +2,23 @@ from flask import Flask, render_template, jsonify, Response, request
 import os
 import math
 
+# vehicle position caching stuff
+import time
+import threading
+
 # TODO: make this less sloppy later
 from merge_feeds import *
 from stops import load_stops
 
 app = Flask(__name__)
+
+# vehicle position caching stuff
+LATEST_VEHICLES = []
+LATEST_VEHICLES_TS = 0.0 # epoch seconds
+LATEST_LOCK = threading.Lock()
+VEHICLE_CACHE_TTL_S = 30 # site throttles with updates <30s
+
+STOPS = load_stops()
 
 # Calculates spherical distance between two points
 def haversine_m(lat1, lon1, lat2, lon2):
@@ -19,6 +31,35 @@ def haversine_m(lat1, lon1, lat2, lon2):
     a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda/2)**2
 
     return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+# Refreshes vehicle position cache
+def refresh_latest_vehicles_if_stale():
+    global LATEST_VEHICLES, LATEST_VEHICLES_TS
+
+    now = time.time()
+
+    # cache still fresh
+    with LATEST_LOCK:
+        if (now - LATEST_VEHICLES_TS) < VEHICLE_CACHE_TTL_S and LATEST_VEHICLES:
+            return
+    
+    # Refresh outside the lock (avoid blocking readers)
+    data = merge_trip_updates_and_positions(update_url, pos_url)
+
+    # Keep only mappable vehicles
+    valid = [v for v in data if v.get("lat") is not None and v.get("lon") is not None]
+
+    # Write once per refresh, not once per client
+    try:
+        save_to_influx(valid)
+        print("Transit data saved to Influx")
+    except Exception as e:
+        print(f"Influx write failed: {e}")
+    
+    # update cache automatically
+    with LATEST_LOCK:
+        LATEST_VEHICLES = valid
+        LATEST_VEHICLES_TS = now
 
 @app.route('/')
 def home():
@@ -40,17 +81,35 @@ def get_bus_data():
 #       instead of a 500 internal server error page.
 @app.route('/api/vehicles')
 def api_vehicles():
-    # call function from merge_feeds.py
-    data = merge_trip_updates_and_positions(update_url, pos_url)
+    refresh_latest_vehicles_if_stale()
+    with LATEST_LOCK:
+        return jsonify(LATEST_VEHICLES)
+    
+@app.get("/api/vehicles_near")
+def api_vehicles_near():
+    lat = request.args.get("lat", type=float)
+    lon = request.args.get("lon", type=float)
+    r_m = request.args.get("r_m", default=800.0, type=float)
 
-    # Save to InfluxDB
-    save_to_influx(data)
-    print("Transit data saved to influx")
+    if lat is None or lon is None:
+        return jsonify([])
+    
+    refresh_latest_vehicles_if_stale()
 
-    valid_data = [v for v in data if v.get('lat') and v.get('lon')]
-    return jsonify(valid_data)
+    with LATEST_LOCK:
+        vehicles = list(LATEST_VEHICLES)
+    
+    out = []
+    for v in vehicles:
+        try:
+            d = haversine_m(lat, lon, float(v["lat"]), float(v["long"]))
+        except Exception:
+            continue
+        if d <= r_m:
+            out.append(v)
+    
+    return jsonify(out)
 
-STOPS = load_stops()
 @app.get("/api/stops")
 def api_stops():
     # otpional bbox filtering
