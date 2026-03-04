@@ -113,26 +113,49 @@ def api_vehicles():
 def api_vehicles_near():
     lat = request.args.get("lat", type=float)
     lon = request.args.get("lon", type=float)
-    r_m = request.args.get("r_m", default=5000.0, type=float)
+    r_m = request.args.get("r_m", default=800.0, type=float)
+    debug = request.args.get("debug", default=0, type=int)
 
     if lat is None or lon is None:
-        return jsonify([])
-    
+        return jsonify({"error": "missing lat/lon"} if debug else [])
+
+    # IMPORTANT: make sure this is the SAME refresh function used everywhere
     refresh_latest_vehicles_if_stale()
 
     with LATEST_LOCK:
         vehicles = list(LATEST_VEHICLES)
-    
-    out = []
+        cache_age_s = time.time() - LATEST_VEHICLES_TS if LATEST_VEHICLES_TS else None
+
+    # Score all vehicles by distance
+    scored = []
     for v in vehicles:
         try:
-            d = haversine_m(lat, lon, float(v["lat"]), float(v["long"]))
+            vlat = float(v["lat"])
+            vlon = float(v["lon"])
+            d = haversine_m(lat, lon, vlat, vlon)
         except Exception:
             continue
-        if d <= r_m:
-            out.append(v)
-    
-    return jsonify(out)
+        scored.append((d, v))
+
+    scored.sort(key=lambda x: x[0])
+
+    within = [v for (d, v) in scored if d <= r_m]
+
+    if debug:
+        nearest_preview = []
+        for d, v in scored[:10]:
+            vv = dict(v)
+            vv["distance_m"] = round(d, 1)
+            nearest_preview.append(vv)
+
+        return jsonify({
+            "query": {"lat": lat, "lon": lon, "r_m": r_m},
+            "cache": {"vehicles_total": len(vehicles), "cache_age_s": None if cache_age_s is None else round(cache_age_s, 2)},
+            "result": {"within_count": len(within)},
+            "nearest_10": nearest_preview
+        })
+
+    return jsonify(within)
 
 @app.get("/api/vehicles_nearest")
 def api_vehicles_nearest():

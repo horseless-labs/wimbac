@@ -1,25 +1,55 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Real-time GTFS Map</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <style>#map { height: 100vh; }</style>
+  <title>Real-time GTFS Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    #map { height: 100vh; }
+    /* Tiny UI hint so users aren't confused at low zoom */
+    .hint {
+      position: absolute;
+      top: 10px;
+      left: 50px;
+      z-index: 1000;
+      background: rgba(255,255,255,0.92);
+      padding: 8px 10px;
+      border-radius: 6px;
+      font: 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+      max-width: 320px;
+    }
+    .hint strong { font-weight: 600; }
+  </style>
 </head>
+
 <body>
-    <div id="map"></div>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script>
-        console.log("WIMBAC Leaflet script loaded ✅", new Date().toISOString());
+  <div id="map"></div>
+  <div id="hint" class="hint" style="display:none;"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
     // --- Map init ---
     const map = L.map('map').setView([41.4993, -81.6944], 12); // Cleveland
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap contributors'
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
     // --- Layers ---
     const stopLayer = L.layerGroup().addTo(map);
     const vehicleLayer = L.layerGroup().addTo(map);
+
+    // --- UI elements ---
+    const hintEl = document.getElementById("hint");
+
+    function showHint(html) {
+      hintEl.innerHTML = html;
+      hintEl.style.display = "block";
+    }
+
+    function hideHint() {
+      hintEl.style.display = "none";
+    }
 
     // --- State ---
     let selectedStop = null;
@@ -27,39 +57,57 @@
 
     // Tuning knobs
     const STOPS_MIN_ZOOM = 13;        // don't draw stops until zoomed in
-    const STOPS_REFRESH_MS = 1500;    // debounce-ish: only on moveend/zoomend anyway
+    const STOPS_REFRESH_MS = 600;     // small debounce so we don't spam server
     const VEHICLE_REFRESH_MS = 15000; // vehicles update once a stop is selected
-    const VEHICLE_RADIUS_M = 800;     // "near stop" radius
+    const VEHICLE_RADIUS_M = 800;     // "near stop" radius (tweak later)
 
     // --- Helpers ---
     function boundsToQuery(bounds) {
-        // Leaflet bounds: south/west/north/east
-        const s = bounds.getSouth();
-        const w = bounds.getWest();
-        const n = bounds.getNorth();
-        const e = bounds.getEast();
-        return `min_lat=${s}&max_lat=${n}&min_lon=${w}&max_lon=${e}`;
+      const s = bounds.getSouth();
+      const w = bounds.getWest();
+      const n = bounds.getNorth();
+      const e = bounds.getEast();
+      return `min_lat=${s}&max_lat=${n}&min_lon=${w}&max_lon=${e}`;
     }
 
-    function clearVehicles() {
-        vehicleLayer.clearLayers();
-        if (vehiclesTimer) {
+    function clearVehiclesAndTimer() {
+      vehicleLayer.clearLayers();
+      if (vehiclesTimer) {
         clearInterval(vehiclesTimer);
         vehiclesTimer = null;
-        }
+      }
+    }
+
+    function setHintForState() {
+      // If too zoomed out, explain why no stops
+      if (map.getZoom() < STOPS_MIN_ZOOM) {
+        showHint(`<strong>Zoom in</strong> to see stops.<br>Stops appear at zoom ${STOPS_MIN_ZOOM}+.`);
+        return;
+      }
+
+      // Zoomed in enough; show the "select a stop" hint unless one is selected
+      if (!selectedStop) {
+        showHint(`<strong>Click a stop</strong> to show nearby buses.`);
+        return;
+      }
+
+      // Stop selected; hint becomes status line (updated during vehicle fetch)
+      showHint(`<strong>${selectedStop.stop_name}</strong><br>Loading nearby buses…`);
     }
 
     // --- Stops: fetch and draw for current viewport ---
     async function fetchStopsForViewport() {
-        if (map.getZoom() < STOPS_MIN_ZOOM) {
+      // Hide stops if zoomed out to prevent confetti
+      if (map.getZoom() < STOPS_MIN_ZOOM) {
         stopLayer.clearLayers();
+        setHintForState();
         return;
-        }
+      }
 
-        const q = boundsToQuery(map.getBounds());
-        const url = `/api/stops?${q}`;
+      const q = boundsToQuery(map.getBounds());
+      const url = `/api/stops?${q}`;
 
-        try {
+      try {
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Stops fetch failed: ${res.status}`);
         const stops = await res.json();
@@ -67,85 +115,128 @@
         stopLayer.clearLayers();
 
         stops.forEach(s => {
-            const dot = L.circleMarker([s.lat, s.lon], {
+          // Coerce to numbers to avoid string/whitespace surprises
+          const lat = Number(s.lat);
+          const lon = Number(s.lon);
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+          const dot = L.circleMarker([lat, lon], {
             radius: 4,
             weight: 1,
             fillOpacity: 0.7
-            });
+          });
 
-            dot.on('click', () => selectStop(s));
-            dot.bindTooltip(s.stop_name, { direction: 'top', offset: [0, -4] });
+          dot.on('click', () => selectStop(s));
+          dot.bindTooltip(s.stop_name, { direction: 'top', offset: [0, -4] });
 
-            dot.addTo(stopLayer);
+          dot.addTo(stopLayer);
         });
-        } catch (err) {
+
+        setHintForState();
+      } catch (err) {
         console.error(err);
-        // Don't spam UI; just keep prior layer state or empty.
-        }
+        showHint(`<strong>Error</strong> loading stops. Check server logs.`);
+      }
     }
 
     // --- Stop selection: set state and start vehicle polling ---
     async function selectStop(stop) {
-    selectedStop = stop;
+      selectedStop = stop;
 
-    L.popup()
-        .setLatLng([stop.lat, stop.lon])
+      const stopLat = Number(stop.lat);
+      const stopLon = Number(stop.lon);
+
+      console.log("STOP CLICKED:", stop.stop_id, stop.stop_name, stopLat, stopLon);
+
+      L.popup()
+        .setLatLng([stopLat, stopLon])
         .setContent(`<b>${stop.stop_name}</b><br>Stop ID: ${stop.stop_id}`)
         .openOn(map);
 
-    // Clear old vehicles + timer FIRST
-    clearVehicles();
+      // IMPORTANT: clear old vehicles + timer FIRST
+      clearVehiclesAndTimer();
 
-    // Fetch once immediately (so user sees results right away)
-    await updateVehiclesNearSelectedStop();
+      // Fetch once immediately (so user sees results right away)
+      await updateVehiclesNearSelectedStop();
 
-    // Then start polling
-    vehiclesTimer = setInterval(updateVehiclesNearSelectedStop, VEHICLE_REFRESH_MS);
+      // Then start polling
+      vehiclesTimer = setInterval(updateVehiclesNearSelectedStop, VEHICLE_REFRESH_MS);
+
+      setHintForState();
     }
 
     // --- Vehicles: fetch and draw near selected stop ---
     async function updateVehiclesNearSelectedStop() {
-        if (!selectedStop) return;
+      if (!selectedStop) return;
 
-        const url = `/api/vehicles_near?lat=${selectedStop.lat}&lon=${selectedStop.lon}&r_m=${VEHICLE_RADIUS_M}`;
+      const stopLat = Number(selectedStop.lat);
+      const stopLon = Number(selectedStop.lon);
 
-        try {
+      const url = `/api/vehicles_near?lat=${stopLat}&lon=${stopLon}&r_m=${VEHICLE_RADIUS_M}`;
+      console.log("Fetching:", url);
+
+      try {
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Vehicles fetch failed: ${res.status}`);
         const vehicles = await res.json();
-        console.log("vehicles_near response:", vehicles);
+
         console.log("vehicles_near count:", vehicles.length);
+        if (vehicles[0]) console.log("sample vehicle:", vehicles[0]);
 
         vehicleLayer.clearLayers();
 
+        // Debug-visible rendering: big circles so you can't miss them.
+        // Later you can revert to L.marker and/or marker reuse by vehicle_id.
         vehicles.forEach(v => {
-            const m = L.marker([v.lat, v.lon]).addTo(vehicleLayer);
+          const lat = Number(v.lat);
+          const lon = Number(v.lon);
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
 
-            const label = v.vehicle_label ? `Bus: ${v.vehicle_label}` : 'Bus';
-            const route = v.route_id ? `Route: ${v.route_id}` : 'Route: ?';
-
-            m.bindPopup(`${label}<br>${route}`);
+          L.circleMarker([lat, lon], {
+            radius: 10,
+            weight: 3,
+            fillOpacity: 1.0
+          })
+            .addTo(vehicleLayer)
+            .bindPopup(
+              `Bus: ${v.vehicle_label ?? "?"}<br>` +
+              `Route: ${v.route_id ?? "?"}<br>` +
+              `Vehicle ID: ${v.vehicle_id ?? "?"}`
+            );
         });
-        } catch (err) {
+
+        // Update hint with results
+        showHint(
+          `<strong>${selectedStop.stop_name}</strong><br>` +
+          `${vehicles.length} bus(es) within ${VEHICLE_RADIUS_M}m.`
+        );
+      } catch (err) {
         console.error(err);
-        // Keep last known vehicle markers rather than clearing on error.
-        }
+        showHint(
+          `<strong>${selectedStop.stop_name}</strong><br>` +
+          `Error loading buses. (See console/logs.)`
+        );
+      }
     }
 
     // --- Events ---
-    // Re-fetch stops when user pans/zooms.
-    // moveend fires after pan/zoom animation ends.
+    // Re-fetch stops when user pans/zooms. moveend fires after pan/zoom ends.
     let stopsRefreshTimeout = null;
+
     function scheduleStopsRefresh() {
-        if (stopsRefreshTimeout) clearTimeout(stopsRefreshTimeout);
-        stopsRefreshTimeout = setTimeout(fetchStopsForViewport, STOPS_REFRESH_MS);
+      if (stopsRefreshTimeout) clearTimeout(stopsRefreshTimeout);
+      stopsRefreshTimeout = setTimeout(fetchStopsForViewport, STOPS_REFRESH_MS);
     }
 
     map.on('moveend', scheduleStopsRefresh);
     map.on('zoomend', scheduleStopsRefresh);
 
+    // Keep hints accurate even if user zooms out after selecting a stop
+    map.on('zoomend', setHintForState);
+
     // Initial draw
     fetchStopsForViewport();
-    </script>
+    setHintForState();
+  </script>
 </body>
 </html>
