@@ -33,30 +33,54 @@ def haversine_m(lat1, lon1, lat2, lon2):
     return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 # Refreshes vehicle position cache
+import time
+import threading
+import requests
+
+LATEST_VEHICLES = []
+LATEST_VEHICLES_TS = 0.0
+LATEST_LOCK = threading.Lock()
+
+VEHICLE_CACHE_TTL_S = 15
+MAX_STALE_S = 5 * 60   # allow serving stale data up to 5 minutes
+
 def refresh_latest_vehicles_if_stale():
     global LATEST_VEHICLES, LATEST_VEHICLES_TS
 
     now = time.time()
 
-    # cache still fresh
     with LATEST_LOCK:
-        if (now - LATEST_VEHICLES_TS) < VEHICLE_CACHE_TTL_S and LATEST_VEHICLES:
+        fresh = (now - LATEST_VEHICLES_TS) < VEHICLE_CACHE_TTL_S and bool(LATEST_VEHICLES)
+        if fresh:
             return
-    
-    # Refresh outside the lock (avoid blocking readers)
-    data = merge_trip_updates_and_positions(update_url, pos_url)
 
-    # Keep only mappable vehicles
-    valid = [v for v in data if v.get("lat") is not None and v.get("lon") is not None]
+    try:
+        data = merge_trip_updates_and_positions(update_url, pos_url)
+        valid = [v for v in data if v.get("lat") is not None and v.get("lon") is not None]
+    except requests.RequestException as e:
+        # Upstream GTFS-RT is failing. Serve stale cache rather than 500ing.
+        print(f"GTFS-RT fetch failed: {e}")
 
-    # Write once per refresh, not once per client
+        with LATEST_LOCK:
+            # If we have anything reasonably recent, just keep serving it.
+            if LATEST_VEHICLES and (now - LATEST_VEHICLES_TS) < MAX_STALE_S:
+                return
+
+        # No cache to fall back to
+        with LATEST_LOCK:
+            LATEST_VEHICLES = []
+            LATEST_VEHICLES_TS = now
+        return
+    except Exception as e:
+        print(f"Vehicle refresh failed: {e}")
+        return
+
+    # Influx write should never take down serving
     try:
         save_to_influx(valid)
-        print("Transit data saved to Influx")
     except Exception as e:
         print(f"Influx write failed: {e}")
-    
-    # update cache automatically
+
     with LATEST_LOCK:
         LATEST_VEHICLES = valid
         LATEST_VEHICLES_TS = now
