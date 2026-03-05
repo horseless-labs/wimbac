@@ -312,3 +312,12 @@ hints, and clearer graphics. Currently:
 **Next Steps**
 - MAKE ICONS LARGER FOR MOBILE!!
 - Considering adding a CSS stylesheet.
+
+# 2026-03-04
+## 2010
+Noticed some peculiarities while trying to look at the Influx database during
+lunch. Saved some influx queries as small shell scripts in validation_stuff/
+and looking at the outputs now.
+
+**TODO**: Consider whether `next_stop_id` should be a tag or a field. Must
+read more on InfluxDB philosophy.
