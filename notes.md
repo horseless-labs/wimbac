@@ -309,4 +309,6 @@ hints, and clearer graphics. Currently:
 - Hollow blue circles for a selected stop.
 - Large blue circle for vehicles.
 
-Considering adding a CSS stylesheet.
+**Next Steps**
+- MAKE ICONS LARGER FOR MOBILE!!
+- Considering adding a CSS stylesheet.
