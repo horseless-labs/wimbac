@@ -2,7 +2,7 @@
 
 **Web-Integrated Monitoring of Bus Activity in Cleveland**
 
-WIMBAC is a lightweight real-time transit monitoring system that ingests GTFS-Realtime feeds, stores vehicle telemetry in InfluxDB, and exposes a web interface for exploring bus activity across Cleveland. Check it out at [WIMBAC](http://www.wimbac.com).
+WIMBAC is a lightweight real-time transit monitoring system that ingests GTFS-Realtime feeds, stores vehicle telemetry in InfluxDB, and exposes a web interface for exploring bus activity across Cleveland. Check it out at [WIMBAC](https://www.wimbac.com).
 
 The project was built as an end-to-end exercise in data ingestion, time-series storage, backend API design, and production deployment.
 
