@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 import json
 import os
+from pathlib import Path
 
 # Endpoint to check
 pos_url = "https://gtfs-rt.gcrta.vontascloud.com/TMGTFSRealTimeWebService/Vehicle/VehiclePositions.pb"
@@ -16,17 +17,18 @@ update_url = "https://gtfs-rt.gcrta.vontascloud.com/TMGTFSRealTimeWebService/Tri
 alert_url = "https://gtfs-rt.gcrta.vontascloud.com/TMGTFSRealTimeWebService/Alert/Alerts.pb"
 
 # InfluxDB stuff
-# influx_token = os.environ["INFLUX_TOKEN"]
-# org = os.environ["INFLUX_ORG"]
-# bucket = os.environ["INFLUX_BUCKET"]
+org = os.getenv("INFLUX_ORG", "Horseless Labs")
+bucket = os.getenv("INFLUX_BUCKET", "wimbac")
 
-# EASIER FOR LOCAL DEVELOPMENT
-# TODO: REMOVE IN PRODUCTION
-with open("influx_token.txt", "r") as f:
-    influx_token = f.read().strip()
-
-org = "Horseless Labs"
-bucket = "wimbac"
+influx_token = os.getenv("INFLUX_TOKEN")
+if not influx_token:
+    token_path = Path("influx_token.txt")
+    if token_path.exists():
+        influx_token = token_path.read_text().strip()
+    else:
+        raise RuntimeError(
+            "INFLUX_TOKEN not set and influx_token.txt not found."
+        )
 
 client = InfluxDBClient(url="http://localhost:8086", token=influx_token, org=org)
 write_api = client.write_api(write_options=SYNCHRONOUS)

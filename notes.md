@@ -321,3 +321,9 @@ and looking at the outputs now.
 
 **TODO**: Consider whether `next_stop_id` should be a tag or a field. Must
 read more on InfluxDB philosophy.
+
+# 2026-03-08
+## 1700
+Modified the logic for markers to propoerly resize on mobile. Still somewhat
+stiff; they are perhaps too large or visible at zoom levels from too high,
+but this is a minor fix.
