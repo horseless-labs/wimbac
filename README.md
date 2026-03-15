@@ -137,9 +137,17 @@ This was chosen because:
 
 Future versions may explore k-d trees or R-trees.
 
-# Caching Strategy
+## Caching Strategy
 
-A key challenge with real-time feeds is API load. If every web request triggered a GTFS fetch, the system would collapse quickly. To avoid this, WIMBAC uses a shared memory cache:
+Real-time transit feeds create a classic load problem: many clients request the same data repeatedly, but the upstream GTFS feeds only update every few seconds. If every web request triggered a fresh GTFS query or database read, the system would quickly overload both external APIs and internal services.
+
+WIMBAC therefore uses two complementary caching layers to stabilize the system.
+
+### 1. Upstream GTFS Fetch Cache
+
+The first cache prevents repeated requests to the external GTFS-Realtime feeds.
+
+The application maintains a shared in-memory representation of the most recent vehicle data:
 
 ```
 LATEST_VEHICLES
@@ -156,13 +164,51 @@ else:
     update cache
 ```
 
-This design ensures:
+This ensures that:
 
-- multiple users share the same data
-- external APIs are not spammed
-- response latency remains low
+- multiple clients share the same upstream data
+- external transit APIs are not repeatedly queried
+- the system remains aligned with the GTFS refresh cadence
 
----
+Instead of each client triggering its own feed request, all clients read from the same cached vehicle snapshot.
+
+### 2. API Response Cache
+
+A second cache layer reduces pressure on the database and API endpoints.
+
+Some API routes require database queries or additional processing. When many users refresh the map or dashboards simultaneously, these routes can generate bursts of identical requests.
+
+To prevent redundant work, WIMBAC temporarily caches the responses of expensive API queries. During the cache lifetime:
+
+- repeated requests return the cached response
+- the database is not queried again
+- latency remains low during traffic bursts
+
+Because the upstream GTFS feed itself only updates every 30 seconds, short-lived API caching introduces minimal staleness while significantly reducing system load.
+
+### Why Two Caches?
+
+The two layers address **different bottlenecks**:
+
+| Layer              | Purpose                                       |
+| ------------------ | --------------------------------------------- |
+| GTFS Fetch Cache   | Protect external transit APIs                 |
+| API Response Cache | Protect the internal database and application |
+
+Together they ensure that WIMBAC can handle many concurrent users while keeping both upstream and downstream systems stable.
+
+### Future Improvements
+
+The current implementation uses in-process memory caching, which works well for a single-instance deployment.
+
+Future deployments may introduce:
+
+* **Redis or Memcached** for distributed caching
+* **event-driven cache invalidation** tied to ingestion updates
+* **per-route caching strategies**
+* **adaptive TTLs based on GTFS feed timing**
+
+These improvements would allow the system to scale across multiple API instances while maintaining consistent cache behavior.
 
 # Frontend
 
