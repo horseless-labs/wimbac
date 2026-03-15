@@ -210,7 +210,15 @@ Environment variables (tokens, config) are stored outside the repo.
 **Test 1**
 Synthetic load tests were conducted using k6 to evaluate the performance of the WIMBAC API under concurrent traffic.
 
-The test gradually increased load from 5 to 50 virtual users over an 11-minute period while capturing request latency, error rates, and system resource usage.
+The test gradually increased load from 5 to 50 virtual users over an 11-minute period while capturing request latency, error rates, and system resource usage. Follow procedure:
+
+```
+cd scripts/loadtest
+./capture_system_stats.sh
+./run_loadtest.sh                 # in a separate terminal
+./collect_posttest_artifacts.sh   # after completion of test, 11m
+cd ../../loadtest_artifacts       # raw results stored here
+```
 
 Results showed stable system behavior under moderate load:
 
@@ -223,6 +231,21 @@ Results showed stable system behavior under moderate load:
 Latency increased gradually as concurrency approached 50 users, indicating worker saturation and request queueing at the Gunicorn layer. Despite increased tail latency, the system maintained a 0% failure rate across all endpoints.
 
 These results establish a baseline for future scaling experiments as the system is migrated to cloud infrastructure.
+
+**Test 2**
+Results showed increased latency under heavier load while the system remained stable:
+
+• Average request latency: ~1006 ms
+• Median latency: ~486 ms
+• p95 latency: ~3.4 s
+• p99 latency: ~4.7 s
+• Error rate: 0%
+
+At 100 concurrent users, median and average latency increased substantially compared to the baseline test, and tail latency rose sharply. This indicates request queueing and worker saturation at the Gunicorn layer as available workers became fully utilized.
+
+Despite the increase in latency and heavier load, the system maintained a 0% request failure rate across all endpoints, demonstrating graceful degradation rather than service failure.
+
+These results help identify the performance limits of the current single-VPS deployment and provide a stress-test benchmark for future scaling comparisons during the planned AWS migration.
 
 ## Design Constraints
 

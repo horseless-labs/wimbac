@@ -1,0 +1,246 @@
+{
+    "metrics": {
+        "vus_max": {
+            "min": 100,
+            "max": 100,
+            "value": 100
+        },
+        "http_req_waiting": {
+            "p(90)": 2752.2616604000004,
+            "p(95)": 3396.5294679999993,
+            "p(99)": 4754.023932960001,
+            "avg": 995.4800421079041,
+            "min": 4.988603,
+            "med": 475.695944,
+            "max": 5818.814114
+        },
+        "http_req_tls_handshaking": {
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 4.180052320000024,
+            "avg": 0.0898811334748011,
+            "min": 0,
+            "med": 0,
+            "max": 23.704959
+        },
+        "http_req_receiving": {
+            "med": 8.89464,
+            "max": 106.422402,
+            "p(90)": 19.789645200000002,
+            "p(95)": 23.463807799999994,
+            "p(99)": 36.907238560000025,
+            "avg": 10.05925147236075,
+            "min": 0.138691
+        },
+        "http_req_duration": {
+            "min": 5.773148,
+            "med": 485.891478,
+            "max": 5851.09932,
+            "p(90)": 2763.247946800001,
+            "p(95)": 3405.191317399997,
+            "p(99)": 4763.15442612,
+            "avg": 1005.5968222403137,
+            "thresholds": {
+                "p(99)<3000": true,
+                "p(95)<1500": true
+            }
+        },
+        "vus": {
+            "value": 1,
+            "min": 1,
+            "max": 100
+        },
+        "api_error_rate": {
+            "passes": 1799,
+            "fails": 7626,
+            "thresholds": {
+                "rate<0.05": true
+            },
+            "value": 0.19087533156498673
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 9425,
+            "thresholds": {
+                "rate<0.05": false
+            },
+            "value": 0
+        },
+        "http_reqs": {
+            "count": 9425,
+            "rate": 14.254039709625571
+        },
+        "http_req_duration{expected_response:true}": {
+            "avg": 1005.5968222403137,
+            "min": 5.773148,
+            "med": 485.891478,
+            "max": 5851.09932,
+            "p(90)": 2763.247946800001,
+            "p(95)": 3405.191317399997,
+            "p(99)": 4763.15442612
+        },
+        "data_sent": {
+            "rate": 2328.840887590663,
+            "count": 1539867
+        },
+        "vehicles_latency": {
+            "med": 479.966627,
+            "max": 5851.09932,
+            "p(90)": 2750.7993828000003,
+            "p(95)": 3380.8008665999996,
+            "p(99)": 4811.227502720002,
+            "avg": 1015.5410745050375,
+            "min": 43.305906,
+            "thresholds": {
+                "p(95)<1500": true
+            }
+        },
+        "route_vehicles_latency": {
+            "avg": 1039.7974331230862,
+            "min": 43.040565,
+            "med": 536.058213,
+            "max": 5770.746858,
+            "p(90)": 2848.1477173999997,
+            "p(95)": 3462.987938199999,
+            "p(99)": 4746.531012319995,
+            "thresholds": {
+                "p(95)<1500": true
+            }
+        },
+        "data_received": {
+            "count": 12162401981,
+            "rate": 18393990.535979066
+        },
+        "iteration_duration": {
+            "min": 508.5932,
+            "med": 2256.905884,
+            "max": 8261.319616,
+            "p(90)": 4397.1374972,
+            "p(95)": 5111.1608638,
+            "p(99)": 6450.682252840002,
+            "avg": 2514.6322465139488
+        },
+        "checks": {
+            "fails": 1799,
+            "passes": 26476,
+            "thresholds": {
+                "rate>0.95": true
+            },
+            "value": 0.9363748894783378
+        },
+        "iterations": {
+            "count": 9425,
+            "rate": 14.254039709625571
+        },
+        "http_req_blocked": {
+            "p(95)": 0.025832199999999975,
+            "p(99)": 4.836453960000008,
+            "avg": 0.11832795755968213,
+            "min": 0.002963,
+            "med": 0.008524,
+            "max": 27.047256,
+            "p(90)": 0.021495400000000005
+        },
+        "http_req_sending": {
+            "avg": 0.05752866005305017,
+            "min": 0.007769,
+            "med": 0.026164,
+            "max": 7.507965,
+            "p(90)": 0.0524086,
+            "p(95)": 0.0705808,
+            "p(99)": 0.7930193200000004
+        },
+        "vehicles_near_latency": {
+            "p(99)": 4728.10334244,
+            "avg": 966.8004586380453,
+            "min": 5.773148,
+            "med": 456.180632,
+            "max": 5813.155664,
+            "p(90)": 2747.0434631999997,
+            "p(95)": 3371.295425799999,
+            "thresholds": {
+                "p(95)<2000": true
+            }
+        },
+        "http_req_connecting": {
+            "avg": 0.007493756286472149,
+            "min": 0,
+            "med": 0,
+            "max": 4.002103,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0.14153664000000032
+        }
+    },
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+                "vehicles: status is 200": {
+                    "name": "vehicles: status is 200",
+                    "path": "::vehicles: status is 200",
+                    "id": "eb27f1d5e8d239e8a10481ae74a5de23",
+                    "passes": 4667,
+                    "fails": 0
+                },
+                "vehicles: response time under 2000ms": {
+                    "name": "vehicles: response time under 2000ms",
+                    "path": "::vehicles: response time under 2000ms",
+                    "id": "26aa3f657b5d8d942041c8912d90f405",
+                    "passes": 3773,
+                    "fails": 894
+                },
+                "vehicles: content-type is json-like": {
+                    "passes": 4667,
+                    "fails": 0,
+                    "name": "vehicles: content-type is json-like",
+                    "path": "::vehicles: content-type is json-like",
+                    "id": "904c510d16fb957c42c9515fdeb2e40e"
+                },
+                "vehicles_near: status is 200": {
+                    "name": "vehicles_near: status is 200",
+                    "path": "::vehicles_near: status is 200",
+                    "id": "fc8b2cae1fcab25f23838929944e8cde",
+                    "passes": 2865,
+                    "fails": 0
+                },
+                "vehicles_near: response time under 2000ms": {
+                    "path": "::vehicles_near: response time under 2000ms",
+                    "id": "5b862f5b7a22c17eea08f94ad0a3b8c5",
+                    "passes": 2330,
+                    "fails": 535,
+                    "name": "vehicles_near: response time under 2000ms"
+                },
+                "vehicles_near: content-type is json-like": {
+                    "id": "ba661584e40b3207e35a6ff5dfbe2455",
+                    "passes": 2865,
+                    "fails": 0,
+                    "name": "vehicles_near: content-type is json-like",
+                    "path": "::vehicles_near: content-type is json-like"
+                },
+                "route_vehicles: status is 200": {
+                    "id": "9f322222065809bd6b0c597272a2bf31",
+                    "passes": 1893,
+                    "fails": 0,
+                    "name": "route_vehicles: status is 200",
+                    "path": "::route_vehicles: status is 200"
+                },
+                "route_vehicles: response time under 2000ms": {
+                    "name": "route_vehicles: response time under 2000ms",
+                    "path": "::route_vehicles: response time under 2000ms",
+                    "id": "e6222f13cadc2791f2314f8d1c05b99a",
+                    "passes": 1523,
+                    "fails": 370
+                },
+                "route_vehicles: content-type is json-like": {
+                    "passes": 1893,
+                    "fails": 0,
+                    "name": "route_vehicles: content-type is json-like",
+                    "path": "::route_vehicles: content-type is json-like",
+                    "id": "f8499749ced1ef549e6af3dae9698268"
+                }
+            }
+    }
+}
