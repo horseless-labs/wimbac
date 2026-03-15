@@ -18,7 +18,7 @@ LATEST_VEHICLES = []
 LATEST_VEHICLES_TS = 0.0 # epoch seconds
 LATEST_LOCK = threading.Lock()
 VEHICLE_CACHE_TTL_S = 30 # site throttles with updates <30s
-
+MAX_STALE_S = 5 * 60   # allow serving stale data up to 5 minutes
 STOPS = load_stops()
 
 # Calculates spherical distance between two points
@@ -32,14 +32,6 @@ def haversine_m(lat1, lon1, lat2, lon2):
     a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda/2)**2
 
     return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-# vehicle position cache stuff
-LATEST_VEHICLES = []
-LATEST_VEHICLES_TS = 0.0
-LATEST_LOCK = threading.Lock()
-
-VEHICLE_CACHE_TTL_S = 15
-MAX_STALE_S = 5 * 60   # allow serving stale data up to 5 minutes
 
 def refresh_latest_vehicles_if_stale():
     global LATEST_VEHICLES, LATEST_VEHICLES_TS
