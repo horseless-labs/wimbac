@@ -206,6 +206,24 @@ Service file example:
 
 Environment variables (tokens, config) are stored outside the repo.
 
+## System Behavior Under Load
+**Test 1**
+Synthetic load tests were conducted using k6 to evaluate the performance of the WIMBAC API under concurrent traffic.
+
+The test gradually increased load from 5 to 50 virtual users over an 11-minute period while capturing request latency, error rates, and system resource usage.
+
+Results showed stable system behavior under moderate load:
+
+• Average request latency: ~285 ms  
+• Median latency: ~107 ms  
+• p95 latency: ~1.4 s  
+• p99 latency: ~1.9 s  
+• Error rate: 0%
+
+Latency increased gradually as concurrency approached 50 users, indicating worker saturation and request queueing at the Gunicorn layer. Despite increased tail latency, the system maintained a 0% failure rate across all endpoints.
+
+These results establish a baseline for future scaling experiments as the system is migrated to cloud infrastructure.
+
 ## Design Constraints
 
 WIMBAC intentionally favors clarity and minimal infrastructure over early optimization. Several design decisions follow from the current scale of the system.

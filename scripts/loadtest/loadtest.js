@@ -38,7 +38,7 @@ export const options = {
   stages: [
     { duration: '1m', target: 5 },   // warm-up
     { duration: '3m', target: 20 },  // moderate load
-    { duration: '4m', target: 50 },  // heavier load
+    { duration: '4m', target: 100 },  // heavier load
     { duration: '2m', target: 10 },  // cooldown
     { duration: '1m', target: 0 },   // ramp down
   ],
