@@ -7,3 +7,9 @@ influx_token.txt
 # Raw GTFS data
 data/raw/
 *.zip
+
+# Ignore the entire directory
+loadtest_artifacts/*
+
+# But do not ignore the results subdirectory
+!loadtest_artifacts/results/
