@@ -21,14 +21,13 @@ org = os.getenv("INFLUX_ORG", "Horseless Labs")
 bucket = os.getenv("INFLUX_BUCKET", "wimbac")
 
 influx_token = os.getenv("INFLUX_TOKEN")
-if not influx_token:
+if influx_token:
+    print(f"Using token from Environment (starts with: {influx_token[:5]}...)")
+else:
     token_path = Path("influx_token.txt")
     if token_path.exists():
         influx_token = token_path.read_text().strip()
-    else:
-        raise RuntimeError(
-            "INFLUX_TOKEN not set and influx_token.txt not found."
-        )
+        print(f"Using token from File (starts with: {influx_token[:5]}...)")
 
 client = InfluxDBClient(url="http://localhost:8086", token=influx_token, org=org)
 write_api = client.write_api(write_options=SYNCHRONOUS)
