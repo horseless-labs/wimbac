@@ -222,11 +222,11 @@ cd ../../loadtest_artifacts       # raw results stored here
 
 Results showed stable system behavior under moderate load:
 
-• Average request latency: ~285 ms  
-• Median latency: ~107 ms  
-• p95 latency: ~1.4 s  
-• p99 latency: ~1.9 s  
-• Error rate: 0%
+- Average request latency: ~285 ms  
+- Median latency: ~107 ms  
+- p95 latency: ~1.4 s  
+- p99 latency: ~1.9 s  
+- Error rate: 0%
 
 Latency increased gradually as concurrency approached 50 users, indicating worker saturation and request queueing at the Gunicorn layer. Despite increased tail latency, the system maintained a 0% failure rate across all endpoints.
 
@@ -235,17 +235,37 @@ These results establish a baseline for future scaling experiments as the system 
 **Test 2**
 Results showed increased latency under heavier load while the system remained stable:
 
-• Average request latency: ~1006 ms
-• Median latency: ~486 ms
-• p95 latency: ~3.4 s
-• p99 latency: ~4.7 s
-• Error rate: 0%
+- Average request latency: ~1006 ms
+- Median latency: ~486 ms
+- p95 latency: ~3.4 s
+- p99 latency: ~4.7 s
+- Error rate: 0%
 
 At 100 concurrent users, median and average latency increased substantially compared to the baseline test, and tail latency rose sharply. This indicates request queueing and worker saturation at the Gunicorn layer as available workers became fully utilized.
 
 Despite the increase in latency and heavier load, the system maintained a 0% request failure rate across all endpoints, demonstrating graceful degradation rather than service failure.
 
 These results help identify the performance limits of the current single-VPS deployment and provide a stress-test benchmark for future scaling comparisons during the planned AWS migration.
+
+**Test 3: Caching with API requests**
+Results showed stable system behavior under heavy load:
+
+- Average request latency: ~22 ms
+- Median latency: ~12 ms
+- p95 latency: ~56 ms
+- p99 latency: ~170 ms
+- Error rate: 0%
+
+Overhead view:
+- **~45× reduction in average latency**
+- **~60× reduction in p95 latency**
+- **~27× reduction in p99 latency**
+
+Moving GTFS ingestion off the request path dramatically improved performance. Vehicle data is now refreshed asynchronously by a background thread, allowing API requests to return a cached snapshot rather than performing feed merges during request handling.
+
+Under a simulated load of 100 concurrent users, the system maintained consistently low latency with minimal tail amplification. This represents a roughly 45× reduction in average latency and over 60× reduction in p95 latency compared to the previous request-driven refresh design.
+
+These results demonstrate that the background refresh cache effectively removes upstream feed processing from the critical request path, enabling the system to scale to higher concurrency while maintaining stable response times.
 
 ## Design Constraints
 
