@@ -10,109 +10,14 @@ import json
 
 # TODO: make this less sloppy later
 from merge_feeds import *
-from stops import load_stops
+from services.stops import load_stops
+
+from utils.geo import haversine_m
+import services.vehicle_state as vehicle_state
 
 app = Flask(__name__)
 
-# vehicle position caching stuff
-LATEST_LOCK = threading.Lock()
-
-LATEST_VEHICLES = []
-LATEST_VEHICLES_JSON = "[]"
-LATEST_VEHICLES_TS = 0.0 # epoch seconds
-
-REFRESH_THREAD = None
-STOP_REFRESH = threading.Event()
-
-VEHICLE_REFRESH_INTERVAL_S = 30
-MAX_STALE_S = 5 * 60   # allow serving stale data up to 5 minutes
-STOPS = load_stops()
-
-# Calculates spherical distance between two points
-def haversine_m(lat1, lon1, lat2, lon2):
-    R = 6371000
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
-
-    a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda/2)**2
-
-    return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-def refresh_latest_vehicles():
-    global LATEST_VEHICLES, LATEST_VEHICLES_JSON, LATEST_VEHICLES_TS
-
-    now = time.time()
-
-    try:
-        data = merge_trip_updates_and_positions(update_url, pos_url)
-        valid = [v for v in data if v.get("lat") is not None and v.get("lon") is not None]
-    except requests.RequestException as e:
-        print(f"GTFS-RT fetch failed: {e}")
-
-        with LATEST_LOCK:
-            # Keep serving stale data if we have something reasonably recent
-            if LATEST_VEHICLES and (now - LATEST_VEHICLES_TS) < MAX_STALE_S:
-                return
-
-            # No valid cache left
-            LATEST_VEHICLES = []
-            LATEST_VEHICLES_JSON = "[]"
-            LATEST_VEHICLES_TS = now
-        return
-    except Exception as e:
-        print(f"Vehicle refresh failed: {e}")
-        return
-
-    # Influx write should never block serving logic conceptually,
-    # but in this version it's already off the request path, so this is okay here.
-    try:
-        save_to_influx(valid)
-    except Exception as e:
-        print(f"Influx write failed: {e}")
-
-    # Pre-serialize once so requests don't keep paying JSON encoding cost
-    try:
-        payload_json = json.dumps(valid, separators=(",", ":"))
-    except Exception as e:
-        print(f"JSON serialization failed during refresh: {e}")
-        return
-
-    with LATEST_LOCK:
-        LATEST_VEHICLES = valid
-        LATEST_VEHICLES_JSON = payload_json
-        LATEST_VEHICLES_TS = now
-
-def vehicle_refresh_loop():
-    while not STOP_REFRESH.is_set():
-        started = time.perf_counter()
-        refresh_latest_vehicles()
-        elapsed = time.perf_counter() - started
-        sleep_for = max(0, VEHICLE_REFRESH_INTERVAL_S - elapsed)
-        STOP_REFRESH.wait(timeout=sleep_for)
-
-def start_vehicle_refresh_thread():
-    global REFRESH_THREAD
-    if REFRESH_THREAD is not None and REFRESH_THREAD.is_alive():
-        return
-    
-    refresh_latest_vehicles()
-
-    REFRESH_THREAD = threading.Thread(
-        target=vehicle_refresh_loop,
-        name="vehicle-refresh-thread",
-        daemon=True
-    )
-    REFRESH_THREAD.start()
-
-def stop_vehicle_refresh_thread():
-    STOP_REFRESH.set()
-    global REFRESH_THREAD
-    if REFRESH_THREAD is not None and REFRESH_THREAD.is_alive():
-        REFRESH_THREAD.join(timeout=2)
-
-atexit.register(stop_vehicle_refresh_thread)
+atexit.register(vehicle_state.stop_vehicle_refresh_thread)
 
 @app.route('/')
 def home():
@@ -121,15 +26,15 @@ def home():
 
 @app.route('/data')
 def get_bus_data():
-    with LATEST_LOCK:
-        return Response(LATEST_VEHICLES_JSON, mimetype='application/json')
+    with vehicle_state.LATEST_LOCK:
+        return Response(vehicle_state.LATEST_VEHICLES_JSON, mimetype='application/json')
 
 # TODO: add try/except block to catch GCRTA server being down
 #       instead of a 500 internal server error page.
 @app.route('/api/vehicles')
 def api_vehicles():
-    with LATEST_LOCK:
-        return Response(LATEST_VEHICLES_JSON, mimetype='application/json')
+    with vehicle_state.LATEST_LOCK:
+        return Response(vehicle_state.LATEST_VEHICLES_JSON, mimetype='application/json')
     
 @app.get("/api/vehicles_near")
 def api_vehicles_near():
@@ -141,9 +46,9 @@ def api_vehicles_near():
     if lat is None or lon is None:
         return jsonify({"error": "missing lat/lon"} if debug else [])
 
-    with LATEST_LOCK:
-        vehicles = list(LATEST_VEHICLES)
-        cache_age_s = time.time() - LATEST_VEHICLES_TS if LATEST_VEHICLES_TS else None
+    with vehicle_state.LATEST_LOCK:
+        vehicles = list(vehicle_state.LATEST_VEHICLES)
+        cache_age_s = time.time() - vehicle_state.LATEST_VEHICLES_TS if vehicle_state.LATEST_VEHICLES_TS else None
 
     # Score all vehicles by distance
     scored = []
@@ -185,8 +90,8 @@ def api_vehicles_nearest():
     if lat is None or lon is None:
         return jsonify([])
     
-    with LATEST_LOCK:
-        vehicles = list(LATEST_VEHICLES)
+    with vehicle_state.LATEST_LOCK:
+        vehicles = list(vehicle_state.LATEST_VEHICLES)
 
     scored = []
     for v in vehicles:
@@ -215,10 +120,10 @@ def api_stops():
     max_lon = request.args.get("max_lon", type=float)
 
     if None in (min_lat, max_lat, min_lon, max_lon):
-        return jsonify(STOPS[:2000])
+        return jsonify(vehicle_state.STOPS[:2000])
     
     out = [
-        s for s in STOPS
+        s for s in vehicle_state.STOPS
         if (min_lat <= s["lat"] <= max_lat) and (min_lon <= s["lon"] <= max_lon)
         and s["location_type"] == 0
     ]
@@ -243,7 +148,7 @@ def health():
         mimetype="text/html",
     )
 
-start_vehicle_refresh_thread()
+vehicle_state.start_vehicle_refresh_thread()
 
 if __name__ == '__main__':
     # 0.0.0.0 makes it accessible locally
