@@ -6,7 +6,7 @@ from influxdb_client import InfluxDBClient
 
 class InfluxAnalyticsService:
     def __init__(self):
-        self.url = os.environ["INFLUX_URL"]
+        self.url = os.environ.get("INFLUX_URL", "http://localhost:8086")
         self.token = os.environ["INFLUX_TOKEN"]
         self.org = os.environ["INFLUX_ORG"]
         self.bucket = os.environ["INFLUX_BUCKET"]
@@ -21,15 +21,14 @@ class InfluxAnalyticsService:
 
     def vehicles_by_hour(self, hours: int = 72) -> List[Dict[str, Any]]:
         """
-        Returns observed vehicle counts grouped by hour.
-        Assumes a measurement like `vehicle_positions`.
-        Adjust `_measurement`, field names, and tags as needed.
+        Counts vehicle_status points by hour.
+        Uses lat field because every written point has lat/lon fields.
         """
         flux = f"""
 from(bucket: "{self.bucket}")
   |> range(start: -{hours}h)
-  |> filter(fn: (r) => r["_measurement"] == "vehicle_positions")
-  |> filter(fn: (r) => r["_field"] == "vehicle_id")
+  |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
+  |> filter(fn: (r) => r["_field"] == "lat")
   |> aggregateWindow(every: 1h, fn: count, createEmpty: false)
   |> keep(columns: ["_time", "_value"])
   |> sort(columns: ["_time"])
@@ -47,20 +46,14 @@ from(bucket: "{self.bucket}")
 
     def routes_summary(self, hours: int = 24) -> List[Dict[str, Any]]:
         """
-        Summarizes observed telemetry by route over the last N hours.
-
-        Assumes:
-        - measurement: vehicle_positions
-        - route_id stored as a tag or column
-        - vehicle_id field exists
-
-        If your schema differs, update the Flux query.
+        Counts observations by route_id over the last N hours.
+        Uses lat field because each point has it, and route_id is a tag.
         """
         flux = f"""
 from(bucket: "{self.bucket}")
   |> range(start: -{hours}h)
-  |> filter(fn: (r) => r["_measurement"] == "vehicle_positions")
-  |> filter(fn: (r) => r["_field"] == "vehicle_id")
+  |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
+  |> filter(fn: (r) => r["_field"] == "lat")
   |> group(columns: ["route_id"])
   |> count()
   |> keep(columns: ["route_id", "_value"])
@@ -71,9 +64,8 @@ from(bucket: "{self.bucket}")
         rows = []
         for table in tables:
             for record in table.records:
-                route_id = record.values.get("route_id", "unknown")
                 rows.append({
-                    "route_id": route_id,
+                    "route_id": record.values.get("route_id", "unknown"),
                     "observations": record.get_value(),
                 })
         return rows
