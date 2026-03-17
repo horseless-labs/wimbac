@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, Response, request
+from flask import Flask, render_template, jsonify, Response, request, g
 import atexit
 import os
 import math
@@ -11,6 +11,9 @@ import json
 # TODO: make this less sloppy later
 from merge_feeds import *
 from services.stops import load_stops
+from services.telemetry import telemetry
+from routes.system_routes import system_bp
+from routes.analytics_routes import analytics_bp
 
 from utils.geo import haversine_m
 import services.vehicle_state as vehicle_state
@@ -19,6 +22,33 @@ app = Flask(__name__)
 
 atexit.register(vehicle_state.stop_vehicle_refresh_thread)
 
+# Register blueprints
+app.register_blueprint(system_bp)
+app.register_blueprint(analytics_bp)
+
+@app.before_request
+def start_request_timer():
+    g.request_start_time = time.perf_counter()
+
+
+@app.after_request
+def record_request_metrics(response):
+    try:
+        start = getattr(g, "request_start_time", None)
+        if start is not None:
+            duration_ms = (time.perf_counter() - start) * 1000.0
+            endpoint = request.path
+            telemetry.record_request(
+                endpoint=endpoint,
+                duration_ms=duration_ms,
+                status_code=response.status_code,
+            )
+    except Exception:
+        # Never let telemetry break the request path.
+        pass
+
+    return response
+
 @app.route('/')
 def home():
     """Serves the actual map"""
@@ -26,16 +56,14 @@ def home():
 
 @app.route('/data')
 def get_bus_data():
-    with vehicle_state.LATEST_LOCK:
-        return Response(vehicle_state.LATEST_VEHICLES_JSON, mimetype='application/json')
+    return Response(vehicle_state.get_latest_vehicles_json(), mimetype='application/json')
 
 # TODO: add try/except block to catch GCRTA server being down
 #       instead of a 500 internal server error page.
 @app.route('/api/vehicles')
 def api_vehicles():
-    with vehicle_state.LATEST_LOCK:
-        return Response(vehicle_state.LATEST_VEHICLES_JSON, mimetype='application/json')
-    
+    return Response(vehicle_state.get_latest_vehicles_json(), mimetype='application/json')
+
 @app.get("/api/vehicles_near")
 def api_vehicles_near():
     lat = request.args.get("lat", type=float)
@@ -46,11 +74,9 @@ def api_vehicles_near():
     if lat is None or lon is None:
         return jsonify({"error": "missing lat/lon"} if debug else [])
 
-    with vehicle_state.LATEST_LOCK:
-        vehicles = list(vehicle_state.LATEST_VEHICLES)
-        cache_age_s = time.time() - vehicle_state.LATEST_VEHICLES_TS if vehicle_state.LATEST_VEHICLES_TS else None
+    vehicles = list(vehicle_state.get_latest_vehicles())
+    cache_age_s = time.time() - vehicle_state.LATEST_VEHICLES_TS if vehicle_state.LATEST_VEHICLES_TS else None
 
-    # Score all vehicles by distance
     scored = []
     for v in vehicles:
         try:
@@ -89,9 +115,8 @@ def api_vehicles_nearest():
 
     if lat is None or lon is None:
         return jsonify([])
-    
-    with vehicle_state.LATEST_LOCK:
-        vehicles = list(vehicle_state.LATEST_VEHICLES)
+
+    vehicles = list(vehicle_state.get_latest_vehicles())
 
     scored = []
     for v in vehicles:
