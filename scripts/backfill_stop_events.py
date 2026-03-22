@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import os
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import List
 
@@ -46,12 +47,21 @@ def parse_args():
 
 def get_client() -> InfluxDBClient:
     url = os.environ.get("INFLUX_URL", "http://localhost:8086")
-    token = os.environ["INFLUX_TOKEN"]
-    org = os.environ["INFLUX_ORG"]
+    org = os.getenv("INFLUX_ORG", "Horseless Labs")
+    bucket = os.getenv("INFLUX_BUCKET", "wimbac")
+
+    influx_token = os.getenv("INFLUX_TOKEN")
+    if influx_token:
+        print(f"Using token from Environment (starts with: {influx_token[:5]}...)")
+    else:
+        token_path = Path("../influx_token.txt")
+        if token_path.exists():
+            influx_token = token_path.read_text().strip()
+            print(f"Using token from File (starts with: {influx_token[:5]}...)")
 
     return InfluxDBClient(
         url=url,
-        token=token,
+        token=influx_token,
         org=org,
         timeout=120000,
     )
