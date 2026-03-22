@@ -111,8 +111,10 @@ def safe_int(value):
 def main():
     args = parse_args()
 
-    bucket = os.environ["INFLUX_BUCKET"]
-    org = os.environ["INFLUX_ORG"]
+    # bucket = os.environ["INFLUX_BUCKET"]
+    # org = os.environ["INFLUX_ORG"]
+    org = os.getenv("INFLUX_ORG", "Horseless Labs")
+    bucket = os.getenv("INFLUX_BUCKET", "wimbac")
 
     start_dt = datetime.now(timezone.utc) - timedelta(days=args.days)
     start_iso = start_dt.isoformat()
