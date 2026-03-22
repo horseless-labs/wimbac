@@ -266,10 +266,12 @@
         const pct = data?.on_time_percentage;
         const sampleSize = data?.sample_size ?? 0;
         const matchedRoutes = Array.isArray(data?.matched_route_ids) ? data.matched_route_ids : [];
+        const lookbackDaysUsed = data?.lookback_days_used ?? 14;
         const timeLabel = data?.time_filter_applied
-          ? "Last 14 days, around this time:"
-          : "Last 14 days, any time of day:";
+          ? `Last ${lookbackDaysUsed} days, around this time:`
+          : `Last ${lookbackDaysUsed} days, any time of day:`;
 
+        const confidence = data?.confidence ?? "none";
         let analyticsHtml = "";
 
         if (pct === null || pct === undefined || sampleSize === 0) {
@@ -280,6 +282,7 @@
             <div class="popup-analytics-row"><b>${escapeHtml(pct)}%</b> on time</div>
             <div class="popup-analytics-row popup-muted">Sample size: ${escapeHtml(sampleSize)}</div>
             <div class="popup-analytics-row popup-muted">Routes: ${escapeHtml(matchedRoutes.join(", ") || "unknown")}</div>
+            <div class="popup-analytics-row popup-muted">Confidence: ${escapeHtml(confidence)}</div>
           `;
         }
 
