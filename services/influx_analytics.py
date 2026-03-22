@@ -82,40 +82,43 @@ from(bucket: "{self.bucket}")
         threshold_seconds: int = 60,
         hour_window: int = 1,
     ) -> Dict[str, Any]:
-        route_filter = f'\n  |> filter(fn: (r) => r["route_id"] == "{route_id}")' if route_id else ""
+        def build_flux(use_hour_filter: bool) -> str:
+            flux_parts = [
+                'import "date"',
+                "",
+                f'from(bucket: "{self.bucket}")',
+                f'  |> range(start: -{lookback_days}d)',
+                '  |> filter(fn: (r) => r["_measurement"] == "vehicle_status")',
+                '  |> filter(fn: (r) => r["_field"] == "delay_seconds")',
+                f'  |> filter(fn: (r) => r["next_stop_id"] == "{stop_id}")',
+            ]
 
-        def run_query(use_hour_filter: bool) -> list:
-            hour_map = ""
-            hour_filter = ""
+            if route_id:
+                flux_parts.append(f'  |> filter(fn: (r) => r["route_id"] == "{route_id}")')
 
             if use_hour_filter:
                 min_hour = max(0, target_hour - hour_window)
                 max_hour = min(23, target_hour + hour_window)
 
-                hour_map = """
-    |> map(fn: (r) => ({
-        r with hour: date.hour(t: r._time)
-    }))"""
-                hour_filter = f"""
-    |> filter(fn: (r) => r.hour >= {min_hour} and r.hour <= {max_hour})"""
+                flux_parts.extend([
+                    '  |> map(fn: (r) => ({',
+                    '      r with hour: date.hour(t: r._time)',
+                    '  }))',
+                    f'  |> filter(fn: (r) => r.hour >= {min_hour} and r.hour <= {max_hour})',
+                ])
 
-            flux = f"""
-    import "date"
+            flux_parts.extend([
+                '  |> group(columns: ["trip_id"])',
+                '  |> last()',
+                '  |> keep(columns: ["trip_id", "_time", "_value", "route_id"])',
+            ])
 
-    from(bucket: "{self.bucket}")
-    |> range(start: -{lookback_days}d)
-    |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
-    |> filter(fn: (r) => r["_field"] == "delay_seconds")
-    |> filter(fn: (r) => r["next_stop_id"] == "{stop_id}"){route_filter}{hour_map}{hour_filter}
-    |> group(columns: ["trip_id"])
-    |> last()
-    |> keep(columns: ["trip_id", "_time", "_value", "route_id"])
-    """
-            print("Flux query:")
-            print(flux)
+            return "\n".join(flux_parts)
+
+        def run_flux(flux: str):
             return self.query_api.query(query=flux, org=self.org)
 
-        def summarize(tables: list) -> Dict[str, Any]:
+        def summarize(tables) -> Dict[str, Any]:
             total = 0
             on_time_count = 0
             matched_routes = set()
@@ -147,16 +150,16 @@ from(bucket: "{self.bucket}")
                 "on_time_percentage": percentage,
             }
 
-        # First pass: same stop, optional route, same-ish time of day
-        tables = run_query(use_hour_filter=True)
+        flux = build_flux(use_hour_filter=True)
+        tables = run_flux(flux)
         result = summarize(tables)
 
         if result["sample_size"] > 0:
             result["time_filter_applied"] = True
             return result
 
-        # Fallback: same stop, optional route, any time of day
-        tables = run_query(use_hour_filter=False)
+        flux = build_flux(use_hour_filter=False)
+        tables = run_flux(flux)
         result = summarize(tables)
         result["time_filter_applied"] = False
         return result

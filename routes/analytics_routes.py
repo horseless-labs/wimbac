@@ -1,3 +1,4 @@
+from datetime import datetime
 from flask import Blueprint, jsonify, request
 
 from services.influx_analytics import InfluxAnalyticsService
@@ -52,29 +53,24 @@ def stop_ontime():
     stop_id = request.args.get("stop_id", type=str)
     route_id = request.args.get("route_id", type=str)
     timestamp = request.args.get("timestamp", type=str)
-    print(f"stop-ontime request: stop_id={stop_id}, route_id={route_id}, timestamp={timestamp}, target_hour={target_hour}")
 
-    if not stop_id or not route_id or not timestamp:
+    if not stop_id or not timestamp:
         return jsonify({
-            "error": "Missing required parameters: stop_id, route_id, timestamp",
+            "error": "Missing required parameters: stop_id, timestamp",
         }), 400
 
     try:
-        # Parse timestamp → extract hour
-        from datetime import datetime
-        dt = datetime.fromisoformat(timestamp)
+        dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
         target_hour = dt.hour
 
         service = InfluxAnalyticsService()
         try:
             data = service.stop_ontime_percentage(
                 stop_id=stop_id,
-                route_id=route_id,
                 target_hour=target_hour,
+                route_id=route_id or None,
             )
-
             return jsonify(data), 200
-
         finally:
             service.close()
 
