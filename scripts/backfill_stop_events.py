@@ -44,24 +44,22 @@ def parse_args():
     )
     return parser.parse_args()
 
-
 def get_client() -> InfluxDBClient:
     url = os.environ.get("INFLUX_URL", "http://localhost:8086")
-    org = os.getenv("INFLUX_ORG", "Horseless Labs")
-    bucket = os.getenv("INFLUX_BUCKET", "wimbac")
+    org = os.environ.get("INFLUX_ORG", "Horseless Labs")
 
-    influx_token = os.getenv("INFLUX_TOKEN")
-    if influx_token:
-        print(f"Using token from Environment (starts with: {influx_token[:5]}...)")
-    else:
-        token_path = Path("../influx_token.txt")
+    token = os.environ.get("INFLUX_TOKEN")
+    if not token:
+        token_path = Path("influx_token.txt")
         if token_path.exists():
-            influx_token = token_path.read_text().strip()
-            print(f"Using token from File (starts with: {influx_token[:5]}...)")
+            token = token_path.read_text().strip()
+
+    if not token:
+        raise RuntimeError("No INFLUX_TOKEN found in environment or influx_token.txt")
 
     return InfluxDBClient(
         url=url,
-        token=influx_token,
+        token=token,
         org=org,
         timeout=120000,
     )
@@ -121,10 +119,8 @@ def safe_int(value):
 def main():
     args = parse_args()
 
-    # bucket = os.environ["INFLUX_BUCKET"]
-    # org = os.environ["INFLUX_ORG"]
-    org = os.getenv("INFLUX_ORG", "Horseless Labs")
-    bucket = os.getenv("INFLUX_BUCKET", "wimbac")
+    bucket = os.environ.get("INFLUX_BUCKET", "wimbac")
+    org = os.environ.get("INFLUX_ORG", "Horseless Labs")
 
     start_dt = datetime.now(timezone.utc) - timedelta(days=args.days)
     start_iso = start_dt.isoformat()
