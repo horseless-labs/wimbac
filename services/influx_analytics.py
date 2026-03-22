@@ -111,6 +111,8 @@ from(bucket: "{self.bucket}")
     |> last()
     |> keep(columns: ["trip_id", "_time", "_value", "route_id"])
     """
+            print("Flux query:")
+            print(flux)
             return self.query_api.query(query=flux, org=self.org)
 
         def summarize(tables: list) -> Dict[str, Any]:

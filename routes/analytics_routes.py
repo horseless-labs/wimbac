@@ -52,6 +52,7 @@ def stop_ontime():
     stop_id = request.args.get("stop_id", type=str)
     route_id = request.args.get("route_id", type=str)
     timestamp = request.args.get("timestamp", type=str)
+    print(f"stop-ontime request: stop_id={stop_id}, route_id={route_id}, timestamp={timestamp}, target_hour={target_hour}")
 
     if not stop_id or not route_id or not timestamp:
         return jsonify({
