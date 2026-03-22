@@ -2,366 +2,161 @@
 
 **Web-Integrated Monitoring of Bus Activity in Cleveland**
 
-WIMBAC is a lightweight real-time transit monitoring system that ingests GTFS-Realtime feeds, stores vehicle telemetry in InfluxDB, and exposes a web interface for exploring bus activity across Cleveland. Check it out at [WIMBAC](https://www.wimbac.com).
+WIMBAC is a lightweight real-time transit monitoring system that ingests GTFS-Realtime feeds, stores vehicle telemetry in InfluxDB, and exposes a web interface for exploring bus activity across Cleveland.
 
-The project was built as an end-to-end exercise in data ingestion, time-series storage, backend API design, and production deployment.
+Live: https://www.wimbac.com
 
-# Overview
+## Overview
 
 WIMBAC collects real-time transit feeds and exposes them through a backend API and map interface.
 
 Core features:
 
-- Real-time (20-30s intervals) ingestion of GTFS-Realtime feeds
-- Storage of vehicle location data in a time-series database
-- Query API for spatial proximity searches
-- Web visualization using Leaflet
-- Production deployment using Gunicorn + Nginx
+- Real-time (20–30s interval) GTFS-RT ingestion  
+- Time-series storage of vehicle telemetry (InfluxDB)  
+- Spatial query API (nearest vehicles)  
+- Leaflet-based frontend visualization  
+- Production deployment (Gunicorn + Nginx on VPS)  
 
-The system currently runs on a low-cost VPS to explore how far a minimal infrastructure stack can scale before additional complexity is required.
+The system is designed as an end-to-end exercise in ingestion, storage, API design, and deployment.
 
-# System Architecture
+## System Architecture
 
-GTFS-Realtime Feeds -> ingestion pipeline -> InfluxDB -> Flask -> nginx + Gunicorn -> Leaflet
+```
 
-Each layer has a narrow responsibility:
+GTFS-RT Feeds → ingestion pipeline → InfluxDB → Flask API → Nginx + Gunicorn → Leaflet frontend
 
-| Layer              | Role                                            |
-| ------------------ | ----------------------------------------------- |
-| **Ingestion**      | Pull GTFS-RT feeds and normalize vehicle data   |
-| **Storage**        | Persist vehicle telemetry as time-series points |
-| **API**            | Query vehicles near a location                  |
-| **Frontend**       | Display real-time map data                      |
-| **Infrastructure** | Serve the application reliably                  |
+```
 
-This separation makes the system easier to extend and scale.
+| Layer           | Role                                            |
+|-----------------|-------------------------------------------------|
+| Ingestion       | Pull + normalize GTFS-RT feeds                  |
+| Storage         | Persist telemetry as time-series data           |
+| API             | Serve real-time + historical queries            |
+| Frontend        | Visualize vehicles and stops                    |
+| Infrastructure  | Serve reliably in production                    |
 
-# Technology Stack
+## Technology Stack
 
-Backend:
-- Python
-- Flask
-- InfluxDB (time-series database)
+**Backend**
+- Python  
+- Flask  
+- InfluxDB  
 
-Frontend:
-- Leaflet.js
-- Vanilla JavaScript
+**Frontend**
+- Leaflet.js  
+- Vanilla JavaScript  
 
-Infrastructure:
+**Infrastructure**
+- Debian VPS  
+- Gunicorn  
+- Nginx  
+- systemd  
 
-- Debian 13 VPS
-- Gunicorn
-- Nginx
-- systemd service management (may dockerize in the futre)
+## Data Ingestion
 
-# Data Ingestion
+WIMBAC ingests GTFS-Realtime feeds from the Greater Cleveland RTA.
 
-WIMBAC ingests GTFS-Realtime feeds provided by the [Greater Cleveland Regional Transit Authority's data links](https://www.riderta.com/developers?tab=multi-section-tab3). WIMBAC currently merges Vehicle Positions and Trip Updates, which provide the following information:
+Merged feeds:
 
 | Feed              | Data                  |
-| ----------------- | --------------------- |
+|-------------------|-----------------------|
 | Vehicle Positions | latitude, longitude   |
 | Trip Updates      | route, stop, schedule |
 
-The ingestion process merges them to produce normalized vehicle objects.
-
-Example normalized record:
+Normalized record:
 
 ```
 {
-  vehicle_id
-  route_id
-  next_stop_id
-  lat
-  lon
-  timestamp
+vehicle_id
+route_id
+next_stop_id
+lat
+lon
+timestamp
 }
 ```
 
-# Time-Series Storage
+## Storage (InfluxDB)
 
-Vehicle telemetry is stored in InfluxDB, which was chosen because:
+Measurement: `vehicle_status`
 
-* Vehicle telemetry is time-series data
-* Queries frequently involve recent windows
-* High ingestion throughput is supported
-* Built-in retention and aggregation capabilities
+**Tags**
+- vehicle_id  
+- route_id  
+- next_stop_id  
 
-There's ongoing thought as to whether `next_stop_id` should be a tag or a
-field, but this this the current structure:
+**Fields**
+- lat  
+- lon  
 
-```
-measurement: vehicle_status
+Supports:
+- latest vehicle positions  
+- time-window queries  
+- route/stop analytics (in progress)  
 
-tags:
-  vehicle_id
-  route_id
-  next_stop_id
-
-fields:
-  lat
-  lon
-```
-
-This allows efficient queries such as:
-
-* latest position per vehicle
-* vehicle counts
-* time-window analytics
-
-# API Design
-
-The Flask API provides endpoints used by the frontend.
+## API
 
 Example:
 
 ```
 /api/nearest_vehicles?lat=41.49&lon=-81.69
-```
-
-Returns vehicles near a given coordinate.
-
-## Spatial Search
-
-The current implementation uses a naïve nearest-neighbor scan:
-
-1. Retrieve vehicles from cache
-2. Compute distance using the Haversine formula
-3. Sort by distance
-
-This was chosen because:
-
-- Dataset size is small (tens to hundreds of vehicles)
-- Simpler to implement
-- Faster than introducing spatial indexing prematurely
-
-Future versions may explore k-d trees or R-trees.
-
-## Caching Strategy
-
-Real-time transit feeds create a classic load problem: many clients request the same data repeatedly, but the upstream GTFS feeds only update every few seconds. If every web request triggered a fresh GTFS query or database read, the system would quickly overload both external APIs and internal services.
-
-WIMBAC therefore uses two complementary caching layers to stabilize the system.
-
-### 1. Upstream GTFS Fetch Cache
-
-The first cache prevents repeated requests to the external GTFS-Realtime feeds.
-
-The application maintains a shared in-memory representation of the most recent vehicle data:
 
 ```
-LATEST_VEHICLES
-LATEST_VEHICLES_TS
-```
 
-When a request arrives:
+### Spatial Search
 
-```
-if cache fresh:
-    return cached vehicles
-else:
-    fetch GTFS feeds
-    update cache
-```
+- In-memory dataset  
+- Haversine distance  
+- Sorted nearest-neighbor results  
 
-This ensures that:
+Chosen for simplicity given current scale (tens–hundreds of vehicles).
 
-- multiple clients share the same upstream data
-- external transit APIs are not repeatedly queried
-- the system remains aligned with the GTFS refresh cadence
+## System Behavior
 
-Instead of each client triggering its own feed request, all clients read from the same cached vehicle snapshot.
+- GTFS ingestion runs asynchronously  
+- API reads from in-memory cache (real-time)  
+- Historical queries use InfluxDB  
 
-### 2. API Response Cache
+This removes feed processing from request paths and stabilizes latency.
 
-A second cache layer reduces pressure on the database and API endpoints.
+## Frontend
 
-Some API routes require database queries or additional processing. When many users refresh the map or dashboards simultaneously, these routes can generate bursts of identical requests.
+- Leaflet-based map centered on Cleveland  
+- Stop markers + interactive selection  
+- Nearby vehicles highlighted  
+- Periodic refresh via API  
 
-To prevent redundant work, WIMBAC temporarily caches the responses of expensive API queries. During the cache lifetime:
-
-- repeated requests return the cached response
-- the database is not queried again
-- latency remains low during traffic bursts
-
-Because the upstream GTFS feed itself only updates every 30 seconds, short-lived API caching introduces minimal staleness while significantly reducing system load.
-
-### Why Two Caches?
-
-The two layers address **different bottlenecks**:
-
-| Layer              | Purpose                                       |
-| ------------------ | --------------------------------------------- |
-| GTFS Fetch Cache   | Protect external transit APIs                 |
-| API Response Cache | Protect the internal database and application |
-
-Together they ensure that WIMBAC can handle many concurrent users while keeping both upstream and downstream systems stable.
-
-### Future Improvements
-
-The current implementation uses in-process memory caching, which works well for a single-instance deployment.
-
-Future deployments may introduce:
-
-* **Redis or Memcached** for distributed caching
-* **event-driven cache invalidation** tied to ingestion updates
-* **per-route caching strategies**
-* **adaptive TTLs based on GTFS feed timing**
-
-These improvements would allow the system to scale across multiple API instances while maintaining consistent cache behavior.
-
-# Frontend
-
-The frontend is a simple Leaflet map.
-
-Features:
-
-- Map centered on Cleveland
-- Stops displayed as markers, with clicked stops represented as empty circles
-- Nearby vehicles enlarged
-- Real-time updates via API calls
-
-The frontend intentionally avoids heavy frameworks in order to keep the stack understandable.
-
-# Deployment Architecture
-
-The system runs on a Linux VPS. Deployment stack and key responsibilities:
+## Deployment
 
 | Component | Role               |
-| --------- | ------------------ |
-| Nginx     | reverse proxy      |
-| Gunicorn  | Python WSGI server |
-| Flask     | application logic  |
-| InfluxDB  | telemetry storage  |
+|----------|--------------------|
+| Nginx    | Reverse proxy      |
+| Gunicorn | WSGI server        |
+| Flask    | Application logic  |
+| InfluxDB | Data storage       |
 
-# Service Management
+## Performance (Summary)
 
-The backend currently runs as a systemd service.
+- Stable performance under 100 concurrent users  
+- 0% error rate across all tests  
+- ~45× latency reduction after caching  
 
-Benefits:
+See:
+- `/docs/caching.md`  
+- `/docs/load-testing.md`  
 
-- automatic restart on failure
-- startup at boot
-- centralized logging
+## Design Principles
 
-Service file example:
+- Keep the system understandable end-to-end  
+- Avoid premature infrastructure  
+- Build components to be replaceable  
 
+## Next Steps
+
+- Add route and stop-level analytics  
+- Implement on-time performance metrics  
+- Improve frontend interactions  
+- Add filtering and clustering  
+- Introduce monitoring dashboards  
 ```
-/etc/systemd/system/wimbac.service
-```
-
-Environment variables (tokens, config) are stored outside the repo.
-
-## System Behavior Under Load
-**Test 1**
-Synthetic load tests were conducted using k6 to evaluate the performance of the WIMBAC API under concurrent traffic.
-
-The test gradually increased load from 5 to 50 virtual users over an 11-minute period while capturing request latency, error rates, and system resource usage. Follow procedure:
-
-```
-cd scripts/loadtest
-./capture_system_stats.sh
-./run_loadtest.sh                 # in a separate terminal
-./collect_posttest_artifacts.sh   # after completion of test, 11m
-cd ../../loadtest_artifacts       # raw results stored here
-```
-
-Results showed stable system behavior under moderate load:
-
-- Average request latency: ~285 ms  
-- Median latency: ~107 ms  
-- p95 latency: ~1.4 s  
-- p99 latency: ~1.9 s  
-- Error rate: 0%
-
-Latency increased gradually as concurrency approached 50 users, indicating worker saturation and request queueing at the Gunicorn layer. Despite increased tail latency, the system maintained a 0% failure rate across all endpoints.
-
-These results establish a baseline for future scaling experiments as the system is migrated to cloud infrastructure.
-
-**Test 2**
-Results showed increased latency under heavier load while the system remained stable:
-
-- Average request latency: ~1006 ms
-- Median latency: ~486 ms
-- p95 latency: ~3.4 s
-- p99 latency: ~4.7 s
-- Error rate: 0%
-
-At 100 concurrent users, median and average latency increased substantially compared to the baseline test, and tail latency rose sharply. This indicates request queueing and worker saturation at the Gunicorn layer as available workers became fully utilized.
-
-Despite the increase in latency and heavier load, the system maintained a 0% request failure rate across all endpoints, demonstrating graceful degradation rather than service failure.
-
-These results help identify the performance limits of the current single-VPS deployment and provide a stress-test benchmark for future scaling comparisons during the planned AWS migration.
-
-**Test 3: Caching with API requests**
-Results showed stable system behavior under heavy load:
-
-- Average request latency: ~22 ms
-- Median latency: ~12 ms
-- p95 latency: ~56 ms
-- p99 latency: ~170 ms
-- Error rate: 0%
-
-Overhead view:
-- **~45× reduction in average latency**
-- **~60× reduction in p95 latency**
-- **~27× reduction in p99 latency**
-
-Moving GTFS ingestion off the request path dramatically improved performance. Vehicle data is now refreshed asynchronously by a background thread, allowing API requests to return a cached snapshot rather than performing feed merges during request handling.
-
-Under a simulated load of 100 concurrent users, the system maintained consistently low latency with minimal tail amplification. This represents a roughly 45× reduction in average latency and over 60× reduction in p95 latency compared to the previous request-driven refresh design.
-
-These results demonstrate that the background refresh cache effectively removes upstream feed processing from the critical request path, enabling the system to scale to higher concurrency while maintaining stable response times.
-
-## Design Constraints
-
-WIMBAC intentionally favors clarity and minimal infrastructure over early optimization. Several design decisions follow from the current scale of the system.
-
-### Keep the system understandable
-
-The current architecture uses:
-
-- a single VPS  
-- a Flask API  
-- a naïve spatial search  
-- a minimal frontend  
-
-This keeps the full system understandable from ingestion to visualization. The entire pipeline—from GTFS ingestion to map rendering—can be traced through a small number of components.
-
-### Avoid premature infrastructure
-
-Many real-time systems introduce infrastructure such as Redis caches, message queues, and container orchestration early in development.
-
-WIMBAC avoids these additions until they are justified by scale. For the current dataset (tens to hundreds of vehicles), simpler approaches remain faster to implement and easier to reason about.
-
-### Design for replacement
-
-Each layer of the system is loosely coupled so it can be replaced independently as requirements evolve.
-
-| Layer            | Possible Upgrade                     |
-|------------------|--------------------------------------|
-| API              | FastAPI or Go service                |
-| Cache            | Redis                                |
-| Spatial queries  | PostGIS or spatial indexing          |
-| Deployment       | Docker / container orchestration     |
-
-This allows the system to evolve without requiring a full rewrite.
-
-# Next Steps
-
-## Immediate Fixes
-
-- Dockerize the application(?)
-- Improve vehicle-stop visualization
-- Add route filtering
-- Add map clustering
-- Add error handling around GTFS feeds
-
-### Main Features
-
-- **ADD ROUTE ANALYTICS**
-- Add monitoring dashboards
-- Implement rate limiting
-- Add user feedback (no account, simple text with optional name)
-- Add historical playback
-- Introduce spatial indexing
