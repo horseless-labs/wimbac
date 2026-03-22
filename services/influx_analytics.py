@@ -77,42 +77,40 @@ def stop_ontime_percentage(
     self,
     stop_id: str,
     target_hour: int,
-    route_id: str | None = None,
+    route_id=None,
     threshold_seconds: int = 60,
     hour_window: int = 1,
 ) -> Dict[str, Any]:
     def build_flux(lookback_days: int, use_hour_filter: bool) -> str:
-        flux_parts = [
-            'import "date"',
-            "",
-            f'from(bucket: "{self.bucket}")',
-            f'  |> range(start: -{lookback_days}d)',
-            '  |> filter(fn: (r) => r["_measurement"] == "vehicle_status")',
-            '  |> filter(fn: (r) => r["_field"] == "delay_seconds")',
-            f'  |> filter(fn: (r) => r["next_stop_id"] == "{stop_id}")',
-        ]
+        min_hour = max(0, target_hour - hour_window)
+        max_hour = min(23, target_hour + hour_window)
+
+        flux = f'''
+import "date"
+
+from(bucket: "{self.bucket}")
+  |> range(start: -{lookback_days}d)
+  |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
+  |> filter(fn: (r) => r["_field"] == "delay_seconds")
+  |> filter(fn: (r) => r["next_stop_id"] == "{stop_id}")
+'''
 
         if route_id:
-            flux_parts.append(f'  |> filter(fn: (r) => r["route_id"] == "{route_id}")')
+            flux += f'''  |> filter(fn: (r) => r["route_id"] == "{route_id}")
+'''
 
         if use_hour_filter:
-            min_hour = max(0, target_hour - hour_window)
-            max_hour = min(23, target_hour + hour_window)
+            flux += f'''  |> map(fn: (r) => ({{
+      r with hour: date.hour(t: r._time)
+  }}))
+  |> filter(fn: (r) => r.hour >= {min_hour} and r.hour <= {max_hour})
+'''
 
-            flux_parts.extend([
-                '  |> map(fn: (r) => ({',
-                '      r with hour: date.hour(t: r._time)',
-                '  }))',
-                f'  |> filter(fn: (r) => r.hour >= {min_hour} and r.hour <= {max_hour})',
-            ])
-
-        flux_parts.extend([
-            '  |> group(columns: ["trip_id"])',
-            '  |> last()',
-            '  |> keep(columns: ["trip_id", "_time", "_value", "route_id"])',
-        ])
-
-        return "\n".join(flux_parts)
+        flux += '''  |> group(columns: ["trip_id"])
+  |> last()
+  |> keep(columns: ["trip_id", "_time", "_value", "route_id"])
+'''
+        return flux
 
     def summarize(tables, lookback_days_used: int, time_filter_applied: bool) -> Dict[str, Any]:
         total = 0
@@ -158,23 +156,19 @@ def stop_ontime_percentage(
         }
 
     query_plans = [
-        {"lookback_days": 14, "use_hour_filter": True},
-        {"lookback_days": 14, "use_hour_filter": False},
-        {"lookback_days": 30, "use_hour_filter": False},
+        (14, True),
+        (14, False),
+        (30, False),
     ]
 
-    for plan in query_plans:
-        flux = build_flux(
-            lookback_days=plan["lookback_days"],
-            use_hour_filter=plan["use_hour_filter"],
-        )
+    for lookback_days, use_hour_filter in query_plans:
+        flux = build_flux(lookback_days, use_hour_filter)
         tables = self.query_api.query(query=flux, org=self.org)
         result = summarize(
             tables,
-            lookback_days_used=plan["lookback_days"],
-            time_filter_applied=plan["use_hour_filter"],
+            lookback_days_used=lookback_days,
+            time_filter_applied=use_hour_filter,
         )
-
         if result["sample_size"] > 0:
             return result
 
