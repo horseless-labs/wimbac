@@ -72,3 +72,54 @@ from(bucket: "{self.bucket}")
 
     def close(self) -> None:
         self.client.close()
+
+    def stop_ontime_percentage(
+    self,
+    stop_id: str,
+    route_id: str,
+    target_hour: int,
+    lookback_days: int = 14,
+    threshold_seconds: int = 60,
+) -> Dict[str, Any]:
+        flux = f"""
+    from(bucket: "{self.bucket}")
+    |> range(start: -{lookback_days}d)
+    |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
+    |> filter(fn: (r) => r["_field"] == "delay_seconds")
+    |> filter(fn: (r) => r["next_stop_id"] == "{stop_id}")
+    |> filter(fn: (r) => r["route_id"] == "{route_id}")
+    |> map(fn: (r) => ({{
+        r with hour: date.hour(t: r._time)
+    }}))
+    |> filter(fn: (r) => r.hour >= {target_hour - 1} and r.hour <= {target_hour + 1})
+    |> group(columns: ["trip_id"])
+    |> last()
+    |> keep(columns: ["trip_id", "_time", "_value"])
+    """
+
+        tables = self.query_api.query(query=flux, org=self.org)
+
+        total = 0
+        on_time_count = 0
+
+        for table in tables:
+            for record in table.records:
+                delay = record.get_value()
+                if delay is None:
+                    continue
+
+                total += 1
+
+                if abs(delay) <= threshold_seconds:
+                    on_time_count += 1
+
+        percentage = None if total == 0 else round((on_time_count / total) * 100, 2)
+
+        return {
+            "stop_id": stop_id,
+            "route_id": route_id,
+            "lookback_days": lookback_days,
+            "threshold_seconds": threshold_seconds,
+            "sample_size": total,
+            "on_time_percentage": percentage,
+        }

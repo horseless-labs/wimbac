@@ -34,6 +34,25 @@
       font-weight: 600;
     }
 
+    .popup-analytics {
+      margin-top: 8px;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .popup-analytics-title {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .popup-analytics-row {
+      margin: 2px 0;
+    }
+
+    .popup-muted {
+      color: #555;
+    }
+
     @media (max-width: 767px) {
       .hint {
         top: 8px;
@@ -58,7 +77,7 @@
     // --- Map init ---
     const map = L.map('map').setView([41.4993, -81.6944], 12); // Cleveland
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
@@ -80,7 +99,9 @@
 
     // --- State ---
     let selectedStop = null;
+    let selectedStopPopup = null;
     let vehiclesTimer = null;
+    let latestStopRequestId = 0;
 
     // Tuning knobs
     const STOPS_MIN_ZOOM = 13;
@@ -90,8 +111,8 @@
 
     // --- Marker sizing / style ---
     const IS_TOUCH_DEVICE =
-    window.matchMedia("(pointer: coarse)").matches ||
-    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      window.matchMedia("(pointer: coarse)").matches ||
+      /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
     // calmer color palette
     const STOP_COLOR = "#2c5aa0";      // muted transit blue
@@ -99,57 +120,57 @@
 
     // --- Stops ---
     const STOP_STYLE = IS_TOUCH_DEVICE
-    ? {
-        radius: 12,
-        weight: 3,
-        color: STOP_COLOR,
-        opacity: 0.9,
-        fillColor: STOP_COLOR,
-        fillOpacity: 0.12
+      ? {
+          radius: 12,
+          weight: 3,
+          color: STOP_COLOR,
+          opacity: 0.9,
+          fillColor: STOP_COLOR,
+          fillOpacity: 0.12
         }
-    : {
-        radius: 15,
-        weight: 2,
-        color: STOP_COLOR,
-        opacity: 0.8,
-        fillColor: STOP_COLOR,
-        fillOpacity: 0.05
+      : {
+          radius: 15,
+          weight: 2,
+          color: STOP_COLOR,
+          opacity: 0.8,
+          fillColor: STOP_COLOR,
+          fillOpacity: 0.05
         };
 
     // --- Selected stop halo ---
     const STOP_SELECTED_STYLE = IS_TOUCH_DEVICE
-    ? {
-        radius: 18,
-        weight: 4,
-        color: "#111",
-        opacity: 1.0,
-        fillOpacity: 0
+      ? {
+          radius: 18,
+          weight: 4,
+          color: "#111",
+          opacity: 1.0,
+          fillOpacity: 0
         }
-    : {
-        radius: 12,
-        weight: 3,
-        color: "#111",
-        opacity: 1.0,
-        fillOpacity: 0
+      : {
+          radius: 12,
+          weight: 3,
+          color: "#111",
+          opacity: 1.0,
+          fillOpacity: 0
         };
 
     // --- Vehicles ---
     const VEHICLE_STYLE = IS_TOUCH_DEVICE
-    ? {
-        radius: 14,
-        weight: 3,
-        color: "#ffffff",
-        fillColor: VEHICLE_COLOR,
-        opacity: 1,
-        fillOpacity: 0.95
+      ? {
+          radius: 14,
+          weight: 3,
+          color: "#ffffff",
+          fillColor: VEHICLE_COLOR,
+          opacity: 1,
+          fillOpacity: 0.95
         }
-    : {
-        radius: 11,
-        weight: 2,
-        color: "#ffffff",
-        fillColor: VEHICLE_COLOR,
-        opacity: 1,
-        fillOpacity: 0.9
+      : {
+          radius: 11,
+          weight: 2,
+          color: "#ffffff",
+          fillColor: VEHICLE_COLOR,
+          opacity: 1,
+          fillOpacity: 0.9
         };
 
     console.log("IS_TOUCH_DEVICE:", IS_TOUCH_DEVICE);
@@ -184,6 +205,118 @@
         return;
       }
       showHint(`<strong>${selectedStop.stop_name}</strong><br>Loading nearby buses…`);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function buildStopPopupHtml(stop, analyticsHtml = `<div class="popup-muted">Loading analytics…</div>`) {
+      return `
+        <div>
+          <b>${escapeHtml(stop.stop_name)}</b><br>
+          Stop ID: ${escapeHtml(stop.stop_id)}
+          <div class="popup-analytics">
+            ${analyticsHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    function updateSelectedStopPopup(html) {
+      if (selectedStopPopup) {
+        selectedStopPopup.setContent(html);
+      }
+    }
+
+    async function fetchStopOnTimeAnalytics(stop, vehicles, requestId) {
+      const routeIds = [...new Set(
+        vehicles
+          .map(v => v.route_id)
+          .filter(routeId => routeId !== null && routeId !== undefined && routeId !== "")
+          .map(String)
+      )];
+
+      if (requestId !== latestStopRequestId || !selectedStop || selectedStop.stop_id !== stop.stop_id) {
+        return;
+      }
+
+      if (routeIds.length === 0) {
+        updateSelectedStopPopup(
+          buildStopPopupHtml(
+            stop,
+            `<div class="popup-muted">No nearby route context available yet for on-time stats.</div>`
+          )
+        );
+        return;
+      }
+
+      updateSelectedStopPopup(
+        buildStopPopupHtml(
+          stop,
+          `<div class="popup-muted">Loading on-time percentages…</div>`
+        )
+      );
+
+      const timestamp = new Date().toISOString();
+
+      const results = await Promise.all(
+        routeIds.map(async (routeId) => {
+          const url =
+            `/api/analytics/stop-ontime?stop_id=${encodeURIComponent(stop.stop_id)}` +
+            `&route_id=${encodeURIComponent(routeId)}` +
+            `&timestamp=${encodeURIComponent(timestamp)}`;
+
+          try {
+            const res = await fetch(url);
+            if (!res.ok) {
+              throw new Error(`stop-ontime ${res.status}`);
+            }
+            const data = await res.json();
+            return { routeId, ok: true, data };
+          } catch (err) {
+            console.error(`Failed stop-ontime for route ${routeId}:`, err);
+            return { routeId, ok: false, error: err };
+          }
+        })
+      );
+
+      if (requestId !== latestStopRequestId || !selectedStop || selectedStop.stop_id !== stop.stop_id) {
+        return;
+      }
+
+      const analyticsRows = results
+        .sort((a, b) => String(a.routeId).localeCompare(String(b.routeId)))
+        .map(result => {
+          if (!result.ok) {
+            return `<div class="popup-analytics-row">Route ${escapeHtml(result.routeId)}: <span class="popup-muted">unavailable</span></div>`;
+          }
+
+          const pct = result.data?.on_time_percentage;
+          const sampleSize = result.data?.sample_size ?? 0;
+
+          if (pct === null || pct === undefined || sampleSize === 0) {
+            return `<div class="popup-analytics-row">Route ${escapeHtml(result.routeId)}: <span class="popup-muted">no recent data</span></div>`;
+          }
+
+          return `<div class="popup-analytics-row">Route ${escapeHtml(result.routeId)}: <b>${escapeHtml(pct)}%</b> on time <span class="popup-muted">(n=${escapeHtml(sampleSize)})</span></div>`;
+        })
+        .join("");
+
+      updateSelectedStopPopup(
+        buildStopPopupHtml(
+          stop,
+          `
+            <div class="popup-analytics-title">Last 14 days, around this time:</div>
+            ${analyticsRows}
+          `
+        )
+      );
     }
 
     // --- Stops: fetch and draw for current viewport ---
@@ -226,6 +359,8 @@
     // --- Stop selection: set state and start vehicle polling ---
     async function selectStop(stop) {
       selectedStop = stop;
+      latestStopRequestId += 1;
+      const requestId = latestStopRequestId;
 
       const stopLat = Number(stop.lat);
       const stopLon = Number(stop.lon);
@@ -236,23 +371,21 @@
       stopSelectionLayer.clearLayers();
       L.circleMarker([stopLat, stopLon], STOP_SELECTED_STYLE).addTo(stopSelectionLayer);
 
-      // Keep popup (optional)
-      L.popup()
+      selectedStopPopup = L.popup()
         .setLatLng([stopLat, stopLon])
-        .setContent(`<b>${stop.stop_name}</b><br>Stop ID: ${stop.stop_id}`)
+        .setContent(buildStopPopupHtml(stop))
         .openOn(map);
 
       clearVehiclesAndTimer();
 
-      // Optionally pan a bit so the user sees what they selected
       map.panTo([stopLat, stopLon], { animate: true });
 
-      await updateVehiclesNearSelectedStop();
-      vehiclesTimer = setInterval(updateVehiclesNearSelectedStop, VEHICLE_REFRESH_MS);
+      await updateVehiclesNearSelectedStop(requestId);
+      vehiclesTimer = setInterval(() => updateVehiclesNearSelectedStop(latestStopRequestId), VEHICLE_REFRESH_MS);
     }
 
     // --- Vehicles: fetch and draw near selected stop ---
-    async function updateVehiclesNearSelectedStop() {
+    async function updateVehiclesNearSelectedStop(requestId = latestStopRequestId) {
       if (!selectedStop) return;
 
       const stopLat = Number(selectedStop.lat);
@@ -265,6 +398,10 @@
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Vehicles fetch failed: ${res.status}`);
         const vehicles = await res.json();
+
+        if (requestId !== latestStopRequestId || !selectedStop) {
+          return;
+        }
 
         console.log("vehicles_near count:", vehicles.length);
         if (vehicles[0]) console.log("sample vehicle:", vehicles[0]);
@@ -279,22 +416,33 @@
           L.circleMarker([lat, lon], VEHICLE_STYLE)
             .addTo(vehicleLayer)
             .bindPopup(
-              `🚌 <b>${v.vehicle_label ?? "Bus"}</b><br>` +
-              `Route: ${v.route_id ?? "?"}<br>` +
-              `Vehicle ID: ${v.vehicle_id ?? "?"}`
+              `🚌 <b>${escapeHtml(v.vehicle_label ?? "Bus")}</b><br>` +
+              `Route: ${escapeHtml(v.route_id ?? "?")}<br>` +
+              `Vehicle ID: ${escapeHtml(v.vehicle_id ?? "?")}`
             );
         });
 
         showHint(
-          `<strong>${selectedStop.stop_name}</strong><br>` +
+          `<strong>${escapeHtml(selectedStop.stop_name)}</strong><br>` +
           `${vehicles.length} bus(es) within ${VEHICLE_RADIUS_M}m.`
         );
+
+        await fetchStopOnTimeAnalytics(selectedStop, vehicles, requestId);
       } catch (err) {
         console.error(err);
         showHint(
-          `<strong>${selectedStop.stop_name}</strong><br>` +
+          `<strong>${escapeHtml(selectedStop.stop_name)}</strong><br>` +
           `Error loading buses. (See console/logs.)`
         );
+
+        if (requestId === latestStopRequestId && selectedStop) {
+          updateSelectedStopPopup(
+            buildStopPopupHtml(
+              selectedStop,
+              `<div class="popup-muted">Could not load on-time analytics.</div>`
+            )
+          );
+        }
       }
     }
 
