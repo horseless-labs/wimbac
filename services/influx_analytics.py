@@ -82,6 +82,8 @@ from(bucket: "{self.bucket}")
     threshold_seconds: int = 60,
 ) -> Dict[str, Any]:
         flux = f"""
+    import "date"
+    
     from(bucket: "{self.bucket}")
     |> range(start: -{lookback_days}d)
     |> filter(fn: (r) => r["_measurement"] == "vehicle_status")

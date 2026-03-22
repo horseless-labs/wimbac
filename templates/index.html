@@ -294,7 +294,7 @@
         .sort((a, b) => String(a.routeId).localeCompare(String(b.routeId)))
         .map(result => {
           if (!result.ok) {
-            return `<div class="popup-analytics-row">Route ${escapeHtml(result.routeId)}: <span class="popup-muted">unavailable</span></div>`;
+            return `<div class="popup-analytics-row">Route ${escapeHtml(result.routeId)}: <span class="popup-muted">unavailable (${escapeHtml(result.error?.message || "error")})</span></div>`;
           }
 
           const pct = result.data?.on_time_percentage;
