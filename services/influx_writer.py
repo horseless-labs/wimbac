@@ -4,6 +4,13 @@ from pathlib import Path
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
+from services.stop_event_state import (
+    StopEventTracker,
+    VehicleSnapshot,
+    build_stop_event_point,
+)
+
+stop_event_tracker = StopEventTracker(on_time_threshold_seconds=60)
 
 org = os.getenv("INFLUX_ORG", "Horseless Labs")
 bucket = os.getenv("INFLUX_BUCKET", "wimbac")
@@ -41,6 +48,110 @@ def _safe_int(value):
 
 
 def save_to_influx(merged_data):
+    from datetime import datetime, timezone
+
+    from influxdb_client import Point, WritePrecision
+
+    from services.stop_event_state import (
+        VehicleSnapshot,
+        build_stop_event_point,
+    )
+
+    points = []
+
+    def parse_dt(value):
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        try:
+            dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            return None
+
+    for item in merged_data:
+        vehicle_id = item.get("vehicle_id")
+        vehicle_label = item.get("vehicle_label")
+        route_id = item.get("route_id")
+        trip_id = item.get("trip_id")
+        start_date = item.get("start_date")
+        direction_id = item.get("direction_id")
+        next_stop_id = item.get("next_stop_id")
+        next_stop_sequence = item.get("next_stop_sequence")
+        delay_seconds = item.get("delay_seconds")
+        lat = item.get("lat")
+        lon = item.get("lon")
+        bearing = item.get("bearing")
+        speed_mps = item.get("speed_mps")
+        vp_timestamp = item.get("vp_timestamp")
+        tu_timestamp = item.get("tu_timestamp")
+        scheduled_departure_unix = item.get("scheduled_departure_unix")
+
+        vp_dt = parse_dt(vp_timestamp) or datetime.now(timezone.utc)
+        tu_dt = parse_dt(tu_timestamp)
+
+        point = (
+            Point("vehicle_status")
+            .tag("vehicle_id", str(vehicle_id))
+            .time(vp_dt, WritePrecision.S)
+        )
+
+        if vehicle_label is not None:
+            point = point.tag("vehicle_label", str(vehicle_label))
+        if route_id is not None:
+            point = point.tag("route_id", str(route_id))
+        if trip_id is not None:
+            point = point.tag("trip_id", str(trip_id))
+        if start_date is not None:
+            point = point.tag("start_date", str(start_date))
+        if direction_id is not None:
+            point = point.tag("direction_id", str(direction_id))
+        if next_stop_id is not None:
+            point = point.tag("next_stop_id", str(next_stop_id))
+
+        if lat is not None:
+            point = point.field("lat", float(lat))
+        if lon is not None:
+            point = point.field("lon", float(lon))
+        if bearing is not None:
+            point = point.field("bearing", float(bearing))
+        if speed_mps is not None:
+            point = point.field("speed_mps", float(speed_mps))
+        if delay_seconds is not None:
+            point = point.field("delay_seconds", int(delay_seconds))
+        if next_stop_sequence is not None:
+            point = point.field("next_stop_sequence", int(next_stop_sequence))
+        if scheduled_departure_unix is not None:
+            point = point.field("scheduled_departure_unix", int(scheduled_departure_unix))
+        if vp_dt is not None:
+            point = point.field("vp_timestamp", int(vp_dt.timestamp()))
+        if tu_dt is not None:
+            point = point.field("tu_timestamp", int(tu_dt.timestamp()))
+
+        points.append(point)
+
+        # --- Derived stop event detection ---
+        if vehicle_id is not None and trip_id is not None and next_stop_id is not None:
+            snapshot = VehicleSnapshot(
+                vehicle_id=str(vehicle_id),
+                trip_id=str(trip_id),
+                route_id=str(route_id) if route_id is not None else "",
+                next_stop_id=str(next_stop_id),
+                observed_at=vp_dt,
+                start_date=str(start_date) if start_date is not None else None,
+                direction_id=str(direction_id) if direction_id is not None else None,
+                vehicle_label=str(vehicle_label) if vehicle_label is not None else None,
+                next_stop_sequence=int(next_stop_sequence) if next_stop_sequence is not None else None,
+                delay_seconds=int(delay_seconds) if delay_seconds is not None else None,
+            )
+
+            stop_event = stop_event_tracker.process_snapshot(snapshot)
+            if stop_event is not None:
+                points.append(build_stop_event_point(stop_event))
+
+    if points:
+        write_api.write(bucket=bucket, org=org, record=points)
     points = []
 
     for row in merged_data:
