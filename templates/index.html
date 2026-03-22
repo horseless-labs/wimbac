@@ -298,62 +298,6 @@
       }
     }
 
-      const timestamp = new Date().toISOString();
-
-      const results = await Promise.all(
-        routeIds.map(async (routeId) => {
-          const url =
-            `/api/analytics/stop-ontime?stop_id=${encodeURIComponent(stop.stop_id)}` +
-            `&route_id=${encodeURIComponent(routeId)}` +
-            `&timestamp=${encodeURIComponent(timestamp)}`;
-
-          try {
-            const res = await fetch(url);
-            if (!res.ok) {
-              throw new Error(`stop-ontime ${res.status}`);
-            }
-            const data = await res.json();
-            return { routeId, ok: true, data };
-          } catch (err) {
-            console.error(`Failed stop-ontime for route ${routeId}:`, err);
-            return { routeId, ok: false, error: err };
-          }
-        })
-      );
-
-      if (requestId !== latestStopRequestId || !selectedStop || selectedStop.stop_id !== stop.stop_id) {
-        return;
-      }
-
-      const analyticsRows = results
-        .sort((a, b) => String(a.routeId).localeCompare(String(b.routeId)))
-        .map(result => {
-          if (!result.ok) {
-            return `<div class="popup-analytics-row">Route ${escapeHtml(result.routeId)}: <span class="popup-muted">unavailable (${escapeHtml(result.error?.message || "error")})</span></div>`;
-          }
-
-          const pct = result.data?.on_time_percentage;
-          const sampleSize = result.data?.sample_size ?? 0;
-
-          if (pct === null || pct === undefined || sampleSize === 0) {
-            return `<div class="popup-analytics-row">Route ${escapeHtml(result.routeId)}: <span class="popup-muted">no recent data</span></div>`;
-          }
-
-          return `<div class="popup-analytics-row">Route ${escapeHtml(result.routeId)}: <b>${escapeHtml(pct)}%</b> on time <span class="popup-muted">(n=${escapeHtml(sampleSize)})</span></div>`;
-        })
-        .join("");
-
-      updateSelectedStopPopup(
-        buildStopPopupHtml(
-          stop,
-          `
-            <div class="popup-analytics-title">Last 14 days, around this time:</div>
-            ${analyticsRows}
-          `
-        )
-      );
-    }
-
     // --- Stops: fetch and draw for current viewport ---
     async function fetchStopsForViewport() {
       if (map.getZoom() < STOPS_MIN_ZOOM) {
