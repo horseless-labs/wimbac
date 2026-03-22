@@ -76,7 +76,7 @@ from(bucket: "{self.bucket}")
     def stop_ontime_percentage(
     self,
     stop_id: str,
-    route_id: str,
+    route_id: str = None,
     target_hour: int,
     lookback_days: int = 14,
     threshold_seconds: int = 60,

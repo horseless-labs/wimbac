@@ -68,7 +68,7 @@ def stop_ontime():
         try:
             data = service.stop_ontime_percentage(
                 stop_id=stop_id,
-                route_id=route_id,
+                route_id=route_id or None,
                 target_hour=target_hour,
             )
 
