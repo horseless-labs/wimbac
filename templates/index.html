@@ -294,7 +294,8 @@
           updateSelectedStopPopup(
             buildStopPopupHtml(
               stop,
-              `<div class="popup-muted">Could not load on-time analytics.</div>`
+              // `<div class="popup-muted">Could not load on-time analytics.</div>`
+              `<div class="popup-muted">Could not load on-time analytics: ${escapeHtml(err.message || "unknown error")}</div>`
             )
           );
         }
