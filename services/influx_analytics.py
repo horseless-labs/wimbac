@@ -74,54 +74,87 @@ from(bucket: "{self.bucket}")
         self.client.close()
 
     def stop_ontime_percentage(
-    self,
-    stop_id: str,
-    route_id: str = None,
-    target_hour: int,
-    lookback_days: int = 14,
-    threshold_seconds: int = 60,
-) -> Dict[str, Any]:
-        flux = f"""
+        self,
+        stop_id: str,
+        target_hour: int,
+        route_id: str | None = None,
+        lookback_days: int = 14,
+        threshold_seconds: int = 60,
+        hour_window: int = 1,
+    ) -> Dict[str, Any]:
+        route_filter = f'\n  |> filter(fn: (r) => r["route_id"] == "{route_id}")' if route_id else ""
+
+        def run_query(use_hour_filter: bool) -> list:
+            hour_map = ""
+            hour_filter = ""
+
+            if use_hour_filter:
+                min_hour = max(0, target_hour - hour_window)
+                max_hour = min(23, target_hour + hour_window)
+
+                hour_map = """
+    |> map(fn: (r) => ({
+        r with hour: date.hour(t: r._time)
+    }))"""
+                hour_filter = f"""
+    |> filter(fn: (r) => r.hour >= {min_hour} and r.hour <= {max_hour})"""
+
+            flux = f"""
     import "date"
-    
+
     from(bucket: "{self.bucket}")
     |> range(start: -{lookback_days}d)
     |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
     |> filter(fn: (r) => r["_field"] == "delay_seconds")
-    |> filter(fn: (r) => r["next_stop_id"] == "{stop_id}")
-    |> filter(fn: (r) => r["route_id"] == "{route_id}")
-    |> map(fn: (r) => ({{
-        r with hour: date.hour(t: r._time)
-    }}))
-    |> filter(fn: (r) => r.hour >= {target_hour - 1} and r.hour <= {target_hour + 1})
+    |> filter(fn: (r) => r["next_stop_id"] == "{stop_id}"){route_filter}{hour_map}{hour_filter}
     |> group(columns: ["trip_id"])
     |> last()
-    |> keep(columns: ["trip_id", "_time", "_value"])
+    |> keep(columns: ["trip_id", "_time", "_value", "route_id"])
     """
+            return self.query_api.query(query=flux, org=self.org)
 
-        tables = self.query_api.query(query=flux, org=self.org)
+        def summarize(tables: list) -> Dict[str, Any]:
+            total = 0
+            on_time_count = 0
+            matched_routes = set()
 
-        total = 0
-        on_time_count = 0
+            for table in tables:
+                for record in table.records:
+                    delay = record.get_value()
+                    if delay is None:
+                        continue
 
-        for table in tables:
-            for record in table.records:
-                delay = record.get_value()
-                if delay is None:
-                    continue
+                    total += 1
 
-                total += 1
+                    record_route_id = record.values.get("route_id")
+                    if record_route_id is not None:
+                        matched_routes.add(str(record_route_id))
 
-                if abs(delay) <= threshold_seconds:
-                    on_time_count += 1
+                    if abs(delay) <= threshold_seconds:
+                        on_time_count += 1
 
-        percentage = None if total == 0 else round((on_time_count / total) * 100, 2)
+            percentage = None if total == 0 else round((on_time_count / total) * 100, 2)
 
-        return {
-            "stop_id": stop_id,
-            "route_id": route_id,
-            "lookback_days": lookback_days,
-            "threshold_seconds": threshold_seconds,
-            "sample_size": total,
-            "on_time_percentage": percentage,
-        }
+            return {
+                "stop_id": stop_id,
+                "route_id": route_id,
+                "matched_route_ids": sorted(matched_routes),
+                "lookback_days": lookback_days,
+                "threshold_seconds": threshold_seconds,
+                "sample_size": total,
+                "on_time_percentage": percentage,
+            }
+
+        # First pass: same stop, optional route, same-ish time of day
+        tables = run_query(use_hour_filter=True)
+        result = summarize(tables)
+
+        if result["sample_size"] > 0:
+            result["time_filter_applied"] = True
+            return result
+
+        # Fallback: same stop, optional route, any time of day
+        tables = run_query(use_hour_filter=False)
+        result = summarize(tables)
+        result["time_filter_applied"] = False
+        return result
