@@ -235,33 +235,68 @@
     }
 
     async function fetchStopOnTimeAnalytics(stop, vehicles, requestId) {
-      const routeIds = [...new Set(
-        vehicles
-          .map(v => v.route_id)
-          .filter(routeId => routeId !== null && routeId !== undefined && routeId !== "")
-          .map(String)
-      )];
-
       if (requestId !== latestStopRequestId || !selectedStop || selectedStop.stop_id !== stop.stop_id) {
-        return;
-      }
-
-      if (routeIds.length === 0) {
-        updateSelectedStopPopup(
-          buildStopPopupHtml(
-            stop,
-            `<div class="popup-muted">No nearby route context available yet for on-time stats.</div>`
-          )
-        );
         return;
       }
 
       updateSelectedStopPopup(
         buildStopPopupHtml(
           stop,
-          `<div class="popup-muted">Loading on-time percentages…</div>`
+          `<div class="popup-muted">Loading on-time percentage…</div>`
         )
       );
+
+      const timestamp = new Date().toISOString();
+      const url =
+        `/api/analytics/stop-ontime?stop_id=${encodeURIComponent(stop.stop_id)}` +
+        `&timestamp=${encodeURIComponent(timestamp)}`;
+
+      try {
+        const res = await fetch(url);
+        if (!res.ok) {
+          throw new Error(`stop-ontime ${res.status}`);
+        }
+
+        const data = await res.json();
+
+        if (requestId !== latestStopRequestId || !selectedStop || selectedStop.stop_id !== stop.stop_id) {
+          return;
+        }
+
+        const pct = data?.on_time_percentage;
+        const sampleSize = data?.sample_size ?? 0;
+        const matchedRoutes = Array.isArray(data?.matched_route_ids) ? data.matched_route_ids : [];
+        const timeLabel = data?.time_filter_applied
+          ? "Last 14 days, around this time:"
+          : "Last 14 days, any time of day:";
+
+        let analyticsHtml = "";
+
+        if (pct === null || pct === undefined || sampleSize === 0) {
+          analyticsHtml = `<div class="popup-muted">No recent data.</div>`;
+        } else {
+          analyticsHtml = `
+            <div class="popup-analytics-title">${timeLabel}</div>
+            <div class="popup-analytics-row"><b>${escapeHtml(pct)}%</b> on time</div>
+            <div class="popup-analytics-row popup-muted">Sample size: ${escapeHtml(sampleSize)}</div>
+            <div class="popup-analytics-row popup-muted">Routes: ${escapeHtml(matchedRoutes.join(", ") || "unknown")}</div>
+          `;
+        }
+
+        updateSelectedStopPopup(buildStopPopupHtml(stop, analyticsHtml));
+      } catch (err) {
+        console.error(`Failed stop-ontime for stop ${stop.stop_id}:`, err);
+
+        if (requestId === latestStopRequestId && selectedStop && selectedStop.stop_id === stop.stop_id) {
+          updateSelectedStopPopup(
+            buildStopPopupHtml(
+              stop,
+              `<div class="popup-muted">Could not load on-time analytics.</div>`
+            )
+          );
+        }
+      }
+    }
 
       const timestamp = new Date().toISOString();
 
