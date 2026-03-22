@@ -278,11 +278,29 @@
           analyticsHtml = `<div class="popup-muted">No recent data.</div>`;
         } else {
           analyticsHtml = `
-            <div class="popup-analytics-title">${timeLabel}</div>
-            <div class="popup-analytics-row"><b>${escapeHtml(pct)}%</b> on time</div>
-            <div class="popup-analytics-row popup-muted">Sample size: ${escapeHtml(sampleSize)}</div>
-            <div class="popup-analytics-row popup-muted">Routes: ${escapeHtml(matchedRoutes.join(", ") || "unknown")}</div>
-            <div class="popup-analytics-row popup-muted">Confidence: ${escapeHtml(confidence)}</div>
+            <div class="popup-analytics">
+              <div class="popup-analytics-title">On-time performance</div>
+
+              <div class="popup-analytics-row">
+                <span class="popup-analytics-main"><b>${escapeHtml(pct)}%</b> on time</span>
+              </div>
+
+              <div class="popup-analytics-row popup-muted">
+                Based on ${escapeHtml(sampleSize)} trip${sampleSize === 1 ? "" : "s"}
+              </div>
+
+              <div class="popup-analytics-row popup-muted">
+                ${escapeHtml(timeLabel)}
+              </div>
+
+              <div class="popup-analytics-row popup-muted">
+                Confidence: ${escapeHtml(confidence)}
+              </div>
+
+              <div class="popup-analytics-row popup-muted">
+                Routes: ${escapeHtml(matchedRoutes.join(", ") || "unknown")}
+              </div>
+            </div>
           `;
         }
 
