@@ -151,3 +151,47 @@ def merge_trip_updates_and_positions(update_url, pos_url):
         merged.append(merged_row)
 
     return merged
+
+if __name__ == "__main__":
+    # Use your real URLs here or import from config
+    import sys
+    import os
+
+    sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
+    from config import update_url, pos_url
+    print("Running GTFS debug check...\n")
+
+    merged = merge_trip_updates_and_positions(update_url, pos_url)
+
+    total = len(merged)
+    with_trip_id = [row for row in merged if row.get("trip_id")]
+    without_trip_id = [row for row in merged if not row.get("trip_id")]
+
+    print(f"Total merged rows: {total}")
+    print(f"Rows WITH trip_id: {len(with_trip_id)}")
+    print(f"Rows WITHOUT trip_id: {len(without_trip_id)}")
+
+    print("\n--- SAMPLE WITH trip_id ---")
+    if with_trip_id:
+        print(with_trip_id[0])
+    else:
+        print("None found")
+
+    print("\n--- SAMPLE WITHOUT trip_id ---")
+    if without_trip_id:
+        print(without_trip_id[0])
+    else:
+        print("All rows have trip_id")
+
+    # Extra: uniqueness check
+    trip_ids = [row["trip_id"] for row in with_trip_id]
+    unique_ids = set(trip_ids)
+
+    print(f"\nUnique trip_id count: {len(unique_ids)}")
+
+    if unique_ids:
+        print("Sample trip_ids:")
+        print(list(unique_ids)[:10])
+
+    print("\nDone.")
