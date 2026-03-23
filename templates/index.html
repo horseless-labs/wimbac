@@ -265,6 +265,7 @@
 
         const pct = data?.on_time_percentage;
         const sampleSize = data?.sample_size ?? 0;
+        const distinctTripCount = data?.distinct_trip_count ?? sampleSize;
         const matchedRoutes = Array.isArray(data?.matched_route_ids) ? data.matched_route_ids : [];
         const lookbackDaysUsed = data?.lookback_days_used ?? 14;
         const timeLabel = data?.time_filter_applied
@@ -286,7 +287,7 @@
               </div>
 
               <div class="popup-analytics-row popup-muted">
-                Based on ${escapeHtml(sampleSize)} trip${sampleSize === 1 ? "" : "s"}
+                Based on ${escapeHtml(distinctTripCount)} trip${distinctTripCount === 1 ? "" : "s"}
               </div>
 
               <div class="popup-analytics-row popup-muted">
