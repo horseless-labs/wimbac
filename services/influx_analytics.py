@@ -93,6 +93,7 @@ from(bucket: "{self.bucket}")
     |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
     |> filter(fn: (r) => r["_field"] == "delay_seconds")
     |> filter(fn: (r) => r["next_stop_id"] == "{stop_id}")
+    |> filter(fn: (r) => exists r["trip_id"] and r["trip_id"] != "")
     '''
 
             if route_id:
@@ -106,23 +107,35 @@ from(bucket: "{self.bucket}")
     |> filter(fn: (r) => r.hour >= {min_hour} and r.hour <= {max_hour})
     '''
 
-            flux += '''  |> group(columns: ["trip_id"])
-    |> last()
-    |> keep(columns: ["trip_id", "_time", "_value", "route_id"])
+            flux += '''
+    |> group(columns: ["trip_id", "next_stop_id"])
+    |> sort(columns: ["_time"], desc: true)
+    |> first()
+    |> keep(columns: ["trip_id", "next_stop_id", "_time", "_value", "route_id"])
     '''
             return flux
 
-        def summarize(tables, lookback_days_used: int, time_filter_applied: bool) -> Dict[str, Any]:
+        def summarize(
+            tables,
+            lookback_days_used: int,
+            time_filter_applied: bool,
+        ) -> Dict[str, Any]:
             total = 0
             on_time_count = 0
             matched_routes = set()
+            trip_ids = set()
 
             for table in tables:
                 for record in table.records:
+                    trip_id = record.values.get("trip_id")
+                    if not trip_id:
+                        continue
+
                     delay = record.get_value()
                     if delay is None:
                         continue
 
+                    trip_ids.add(str(trip_id))
                     total += 1
 
                     record_route_id = record.values.get("route_id")
@@ -149,6 +162,7 @@ from(bucket: "{self.bucket}")
                 "matched_route_ids": sorted(matched_routes),
                 "threshold_seconds": threshold_seconds,
                 "sample_size": total,
+                "distinct_trip_count": len(trip_ids),
                 "on_time_percentage": percentage,
                 "time_filter_applied": time_filter_applied,
                 "lookback_days_used": lookback_days_used,
@@ -178,6 +192,7 @@ from(bucket: "{self.bucket}")
             "matched_route_ids": [],
             "threshold_seconds": threshold_seconds,
             "sample_size": 0,
+            "distinct_trip_count": 0,
             "on_time_percentage": None,
             "time_filter_applied": False,
             "lookback_days_used": 30,
