@@ -90,8 +90,11 @@ from(bucket: "{self.bucket}")
 
     from(bucket: "{self.bucket}")
     |> range(start: -{lookback_days}d)
-    |> filter(fn: (r) => r["_measurement"] == "stop_events")
-    |> filter(fn: (r) => r["stop_id"] == "{stop_id}")
+    |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
+    |> filter(fn: (r) => r["_field"] == "delay_seconds")
+    |> filter(fn: (r) => r["next_stop_id"] == "{stop_id}")
+    |> filter(fn: (r) => exists r["trip_id"])
+    |> filter(fn: (r) => r["trip_id"] != "")
     '''
 
             if route_id:
@@ -106,20 +109,18 @@ from(bucket: "{self.bucket}")
     '''
 
             flux += '''
-    |> filter(fn: (r) => r["_field"] == "delay_seconds" or r["_field"] == "on_time")
-    |> pivot(
-        rowKey: ["_time", "trip_id", "stop_id", "route_id", "vehicle_id"],
-        columnKey: ["_field"],
-        valueColumn: "_value"
-    )
-    |> group(columns: ["trip_id"])
+    |> group(columns: ["trip_id", "next_stop_id"])
     |> sort(columns: ["_time"], desc: true)
     |> first()
-    |> keep(columns: ["trip_id", "stop_id", "route_id", "vehicle_id", "_time", "delay_seconds", "on_time"])
+    |> keep(columns: ["trip_id", "next_stop_id", "_time", "_value", "route_id"])
     '''
             return flux
 
-        def summarize(tables, lookback_days_used: int, time_filter_applied: bool) -> Dict[str, Any]:
+        def summarize(
+            tables,
+            lookback_days_used: int,
+            time_filter_applied: bool,
+        ) -> Dict[str, Any]:
             total = 0
             on_time_count = 0
             matched_routes = set()
@@ -131,6 +132,10 @@ from(bucket: "{self.bucket}")
                     if not trip_id:
                         continue
 
+                    delay = record.get_value()
+                    if delay is None:
+                        continue
+
                     trip_ids.add(str(trip_id))
                     total += 1
 
@@ -138,21 +143,8 @@ from(bucket: "{self.bucket}")
                     if record_route_id is not None:
                         matched_routes.add(str(record_route_id))
 
-                    on_time_value = record.values.get("on_time")
-                    delay_value = record.values.get("delay_seconds")
-
-                    if on_time_value is not None:
-                        try:
-                            if int(on_time_value) == 1:
-                                on_time_count += 1
-                        except Exception:
-                            pass
-                    elif delay_value is not None:
-                        try:
-                            if abs(int(delay_value)) <= threshold_seconds:
-                                on_time_count += 1
-                        except Exception:
-                            pass
+                    if abs(int(delay)) <= threshold_seconds:
+                        on_time_count += 1
 
             percentage = None if total == 0 else round((on_time_count / total) * 100, 2)
 
