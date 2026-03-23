@@ -41,8 +41,8 @@ def parse_args():
     parser.add_argument(
         "--measurement",
         type=str,
-        default="stop_events_backfill_test",
-        help="Measurement name to write to (default: stop_events_backfill_test)",
+        default="stop_events",
+        help="Measurement name to write to (default: stop_events)",
     )
     parser.add_argument(
         "--progress-every",
@@ -85,6 +85,18 @@ def get_client() -> InfluxDBClient:
     )
 
 
+def safe_int(value):
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return None
+
+
 def build_count_flux(bucket: str, start_iso: str, stop_iso: str) -> str:
     return f"""
 from(bucket: "{bucket}")
@@ -94,6 +106,7 @@ from(bucket: "{bucket}")
   |> filter(fn: (r) => exists r["vehicle_id"])
   |> filter(fn: (r) => exists r["route_id"])
   |> filter(fn: (r) => exists r["next_stop_id"])
+  |> filter(fn: (r) => exists r["trip_id"])
   |> count()
 """
 
@@ -118,15 +131,21 @@ from(bucket: "{bucket}")
   |> range(start: time(v: "{start_iso}"), stop: time(v: "{stop_iso}"))
   |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
   |> filter(fn: (r) => r["_field"] == "delay_seconds")
-  |> filter(fn: (r) => exists r["next_stop_id"])
-  |> filter(fn: (r) => exists r["route_id"])
   |> filter(fn: (r) => exists r["vehicle_id"])
+  |> filter(fn: (r) => exists r["route_id"])
+  |> filter(fn: (r) => exists r["next_stop_id"])
+  |> filter(fn: (r) => exists r["trip_id"])
   |> keep(columns: [
       "_time",
       "_value",
       "vehicle_id",
+      "trip_id",
       "route_id",
-      "next_stop_id"
+      "next_stop_id",
+      "start_date",
+      "direction_id",
+      "vehicle_label",
+      "next_stop_sequence"
   ])
   |> sort(columns: ["_time"])
 """
@@ -139,25 +158,23 @@ def parse_record_time(record) -> datetime:
     return dt
 
 
-def safe_int(value):
-    if value is None or value == "":
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        try:
-            return int(float(value))
-        except (TypeError, ValueError):
-            return None
+def build_forward_chunks(days: int, chunk_days: int) -> List[Tuple[datetime, datetime]]:
+    """
+    Build chronological [start, stop) windows.
+    Oldest chunk comes first so tracker state advances in time correctly.
+    """
+    now = datetime.now(timezone.utc)
+    overall_start = now - timedelta(days=days)
 
+    chunks: List[Tuple[datetime, datetime]] = []
+    current_start = overall_start
 
-def make_synthetic_trip_id(
-    observed_at: datetime,
-    vehicle_id: str,
-    route_id: str,
-) -> str:
-    service_day = observed_at.strftime("%Y%m%d")
-    return f"synthetic:{route_id}:{vehicle_id}:{service_day}"
+    while current_start < now:
+        current_stop = min(current_start + timedelta(days=chunk_days), now)
+        chunks.append((current_start, current_stop))
+        current_start = current_stop
+
+    return chunks
 
 
 def build_point_for_measurement(event, measurement_name: str):
@@ -181,27 +198,6 @@ def format_eta(seconds_remaining: float) -> str:
     return f"{seconds}s"
 
 
-def build_reverse_chunks(days: int, chunk_days: int) -> List[Tuple[datetime, datetime]]:
-    """
-    Build reverse-chronological [start, stop) windows.
-    Most recent chunk comes first.
-    """
-    now = datetime.now(timezone.utc)
-    chunks: List[Tuple[datetime, datetime]] = []
-
-    current_stop = now
-    remaining_days = days
-
-    while remaining_days > 0:
-        span = min(chunk_days, remaining_days)
-        current_start = current_stop - timedelta(days=span)
-        chunks.append((current_start, current_stop))
-        current_stop = current_start
-        remaining_days -= span
-
-    return chunks
-
-
 def main():
     args = parse_args()
 
@@ -217,7 +213,7 @@ def main():
     query_api = client.query_api()
     write_api = client.write_api(write_options=SYNCHRONOUS)
 
-    chunks = build_reverse_chunks(days=args.days, chunk_days=args.chunk_days)
+    chunks = build_forward_chunks(days=args.days, chunk_days=args.chunk_days)
 
     print(f"Backfilling {args.measurement} from vehicle_status")
     print(f"Bucket: {bucket}")
@@ -226,7 +222,7 @@ def main():
     print(f"Total lookback days: {args.days}")
     print(f"Chunk size (days): {args.chunk_days}")
     print(f"Chunk count: {len(chunks)}")
-    print("Processing newest chunks first...\n")
+    print("Processing oldest chunks first...\n")
 
     grand_rows_seen = 0
     grand_events_detected = 0
@@ -288,30 +284,28 @@ def main():
                     observed_at = parse_record_time(record)
 
                     vehicle_id = values.get("vehicle_id")
+                    trip_id = values.get("trip_id")
                     route_id = values.get("route_id")
                     next_stop_id = values.get("next_stop_id")
-
-                    if not vehicle_id or not route_id or not next_stop_id:
-                        continue
-
-                    trip_id = make_synthetic_trip_id(
-                        observed_at=observed_at,
-                        vehicle_id=str(vehicle_id),
-                        route_id=str(route_id),
-                    )
-
+                    start_date = values.get("start_date")
+                    direction_id = values.get("direction_id")
+                    vehicle_label = values.get("vehicle_label")
+                    next_stop_sequence = safe_int(values.get("next_stop_sequence"))
                     delay_seconds = safe_int(record.get_value())
+
+                    if not vehicle_id or not trip_id or not route_id or not next_stop_id:
+                        continue
 
                     snapshot = VehicleSnapshot(
                         vehicle_id=str(vehicle_id),
-                        trip_id=trip_id,
+                        trip_id=str(trip_id),
                         route_id=str(route_id),
                         next_stop_id=str(next_stop_id),
                         observed_at=observed_at,
-                        start_date=None,
-                        direction_id=None,
-                        vehicle_label=None,
-                        next_stop_sequence=None,
+                        start_date=str(start_date) if start_date not in (None, "") else None,
+                        direction_id=str(direction_id) if direction_id not in (None, "") else None,
+                        vehicle_label=str(vehicle_label) if vehicle_label not in (None, "") else None,
+                        next_stop_sequence=next_stop_sequence,
                         delay_seconds=delay_seconds,
                     )
 
