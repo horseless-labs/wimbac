@@ -74,13 +74,13 @@ from(bucket: "{self.bucket}")
         self.client.close()
 
     def stop_ontime_percentage(
-        self,
-        stop_id: str,
-        target_hour: int,
-        route_id=None,
-        threshold_seconds: int = 60,
-        hour_window: int = 1,
-    ) -> Dict[str, Any]:
+    self,
+    stop_id: str,
+    target_hour: int,
+    route_id=None,
+    threshold_seconds: int = 60,
+    hour_window: int = 1,
+) -> Dict[str, Any]:
         def build_flux(lookback_days: int, use_hour_filter: bool) -> str:
             min_hour = max(0, target_hour - hour_window)
             max_hour = min(23, target_hour + hour_window)
@@ -93,8 +93,6 @@ from(bucket: "{self.bucket}")
     |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
     |> filter(fn: (r) => r["_field"] == "delay_seconds")
     |> filter(fn: (r) => r["next_stop_id"] == "{stop_id}")
-    |> filter(fn: (r) => exists r["trip_id"])
-    |> filter(fn: (r) => r["trip_id"] != "")
     '''
 
             if route_id:
@@ -109,10 +107,10 @@ from(bucket: "{self.bucket}")
     '''
 
             flux += '''
-    |> group(columns: ["trip_id", "next_stop_id"])
+    |> group(columns: ["vehicle_id", "next_stop_id"])
     |> sort(columns: ["_time"], desc: true)
     |> first()
-    |> keep(columns: ["trip_id", "next_stop_id", "_time", "_value", "route_id"])
+    |> keep(columns: ["vehicle_id", "next_stop_id", "_time", "_value", "route_id"])
     '''
             return flux
 
@@ -124,27 +122,30 @@ from(bucket: "{self.bucket}")
             total = 0
             on_time_count = 0
             matched_routes = set()
-            trip_ids = set()
+            vehicle_ids = set()
 
             for table in tables:
                 for record in table.records:
-                    trip_id = record.values.get("trip_id")
-                    if not trip_id:
+                    vehicle_id = record.values.get("vehicle_id")
+                    if not vehicle_id:
                         continue
 
                     delay = record.get_value()
                     if delay is None:
                         continue
 
-                    trip_ids.add(str(trip_id))
+                    vehicle_ids.add(str(vehicle_id))
                     total += 1
 
                     record_route_id = record.values.get("route_id")
                     if record_route_id is not None:
                         matched_routes.add(str(record_route_id))
 
-                    if abs(int(delay)) <= threshold_seconds:
-                        on_time_count += 1
+                    try:
+                        if abs(int(delay)) <= threshold_seconds:
+                            on_time_count += 1
+                    except Exception:
+                        continue
 
             percentage = None if total == 0 else round((on_time_count / total) * 100, 2)
 
@@ -163,7 +164,7 @@ from(bucket: "{self.bucket}")
                 "matched_route_ids": sorted(matched_routes),
                 "threshold_seconds": threshold_seconds,
                 "sample_size": total,
-                "distinct_trip_count": len(trip_ids),
+                "distinct_vehicle_count": len(vehicle_ids),
                 "on_time_percentage": percentage,
                 "time_filter_applied": time_filter_applied,
                 "lookback_days_used": lookback_days_used,
@@ -193,7 +194,7 @@ from(bucket: "{self.bucket}")
             "matched_route_ids": [],
             "threshold_seconds": threshold_seconds,
             "sample_size": 0,
-            "distinct_trip_count": 0,
+            "distinct_vehicle_count": 0,
             "on_time_percentage": None,
             "time_filter_applied": False,
             "lookback_days_used": 30,
