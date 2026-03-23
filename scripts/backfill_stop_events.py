@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from influxdb_client import InfluxDBClient
 from influxdb_client.client.write_api import SYNCHRONOUS
@@ -44,6 +45,12 @@ def parse_args():
         help="Measurement name to write to (default: stop_events_backfill_test)",
     )
     parser.add_argument(
+        "--progress-every",
+        type=int,
+        default=10000,
+        help="Print progress every N rows (default: 10000)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Detect and count stop_events without writing them",
@@ -71,6 +78,34 @@ def get_client() -> InfluxDBClient:
         timeout=120000,
     )
 
+
+def build_count_flux(bucket: str, start_iso: str) -> str:
+    return f"""
+from(bucket: "{bucket}")
+  |> range(start: time(v: "{start_iso}"))
+  |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
+  |> filter(fn: (r) => r["_field"] == "delay_seconds")
+  |> filter(fn: (r) => exists r["vehicle_id"])
+  |> filter(fn: (r) => exists r["route_id"])
+  |> filter(fn: (r) => exists r["next_stop_id"])
+  |> count()
+"""
+
+
+def get_total_rows(query_api, bucket: str, org: str, start_iso: str) -> int:
+    flux = build_count_flux(bucket=bucket, start_iso=start_iso)
+    tables = query_api.query(query=flux, org=org)
+
+    total = 0
+    for table in tables:
+        for record in table.records:
+            value = record.get_value()
+            if value is not None:
+                total += int(value)
+
+    return total
+
+
 def build_flux(bucket: str, start_iso: str) -> str:
     return f"""
 from(bucket: "{bucket}")
@@ -87,8 +122,9 @@ from(bucket: "{bucket}")
       "route_id",
       "next_stop_id"
   ])
-  |> sort(columns: ["vehicle_id", "route_id", "_time"])
+  |> sort(columns: ["_time"])
 """
+
 
 def parse_record_time(record) -> datetime:
     dt = record.get_time()
@@ -114,18 +150,29 @@ def make_synthetic_trip_id(
     vehicle_id: str,
     route_id: str,
 ) -> str:
-    # Fallback identity for older data without trip_id.
-    # Not perfect, but usually good enough to keep one vehicle's service day
-    # from bleeding into the next.
     service_day = observed_at.strftime("%Y%m%d")
     return f"synthetic:{route_id}:{vehicle_id}:{service_day}"
 
 
 def build_point_for_measurement(event, measurement_name: str):
     point = build_stop_event_point(event)
-    # Rewrite measurement name without changing the helper module.
     point._name = measurement_name
     return point
+
+
+def format_eta(seconds_remaining: float) -> str:
+    if seconds_remaining < 0:
+        seconds_remaining = 0
+
+    total_seconds = int(seconds_remaining)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    if hours > 0:
+        return f"{hours}h {minutes}m {seconds}s"
+    if minutes > 0:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
 
 
 def main():
@@ -152,6 +199,9 @@ def main():
     print(f"Bucket: {bucket}")
     print(f"Org: {org}")
     print(f"Dry run: {args.dry_run}")
+    print("Counting total rows...")
+    total_rows = get_total_rows(query_api, bucket, org, start_iso)
+    print(f"Total rows to process: {total_rows}")
     print("Querying historical snapshots...")
 
     tables = query_api.query(query=flux, org=org)
@@ -160,11 +210,27 @@ def main():
     rows_seen = 0
     events_detected = 0
     events_written = 0
+    started_at = time.time()
 
     try:
         for table in tables:
             for record in table.records:
                 rows_seen += 1
+
+                if rows_seen % args.progress_every == 0:
+                    elapsed = time.time() - started_at
+                    rate = rows_seen / elapsed if elapsed > 0 else 0.0
+
+                    if total_rows > 0:
+                        pct = (rows_seen / total_rows) * 100
+                        remaining_rows = max(total_rows - rows_seen, 0)
+                        eta_seconds = remaining_rows / rate if rate > 0 else 0
+                        print(
+                            f"Processed {rows_seen}/{total_rows} rows "
+                            f"({pct:.2f}%) | {rate:.0f} rows/sec | ETA {format_eta(eta_seconds)}"
+                        )
+                    else:
+                        print(f"Processed {rows_seen} rows | {rate:.0f} rows/sec")
 
                 values = record.values
                 observed_at = parse_record_time(record)
@@ -176,8 +242,6 @@ def main():
                 if not vehicle_id or not route_id or not next_stop_id:
                     continue
 
-                # Older data may not have trip_id.
-                # Use a synthetic one for state tracking during backfill.
                 trip_id = make_synthetic_trip_id(
                     observed_at=observed_at,
                     vehicle_id=str(vehicle_id),
@@ -232,9 +296,12 @@ def main():
             events_written += len(derived_points)
             derived_points.clear()
 
+        elapsed = time.time() - started_at
+
         print("\nDone.")
         print(f"Rows scanned:      {rows_seen}")
         print(f"Events detected:   {events_detected}")
+        print(f"Elapsed:           {format_eta(elapsed)}")
         if args.dry_run:
             print("No writes performed (dry run).")
         else:
