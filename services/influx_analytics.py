@@ -27,7 +27,7 @@ class InfluxAnalyticsService:
         flux = f"""
 from(bucket: "{self.bucket}")
   |> range(start: -{hours}h)
-  |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
+  |> filter(fn: (r) => r["_measurement"] == "stop_events")
   |> filter(fn: (r) => r["_field"] == "lat")
   |> aggregateWindow(every: 1h, fn: count, createEmpty: false)
   |> keep(columns: ["_time", "_value"])
