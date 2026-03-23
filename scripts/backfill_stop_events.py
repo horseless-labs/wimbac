@@ -18,49 +18,15 @@ from services.stop_event_state import (
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Backfill derived stop_events from historical vehicle_status data in day-sized chunks."
+        description="Backfill derived stop_events from historical vehicle_status data in chronological chunks."
     )
-    parser.add_argument(
-        "--days",
-        type=int,
-        default=30,
-        help="How many days back to scan (default: 30)",
-    )
-    parser.add_argument(
-        "--threshold-seconds",
-        type=int,
-        default=60,
-        help="On-time threshold in seconds (default: 60)",
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=5000,
-        help="How many derived stop_events to buffer before writing (default: 5000)",
-    )
-    parser.add_argument(
-        "--measurement",
-        type=str,
-        default="stop_events",
-        help="Measurement name to write to (default: stop_events)",
-    )
-    parser.add_argument(
-        "--progress-every",
-        type=int,
-        default=10000,
-        help="Print progress every N rows within a day chunk (default: 10000)",
-    )
-    parser.add_argument(
-        "--chunk-days",
-        type=int,
-        default=1,
-        help="Number of days per query chunk (default: 1)",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Detect and count stop_events without writing them",
-    )
+    parser.add_argument("--days", type=int, default=3)
+    parser.add_argument("--threshold-seconds", type=int, default=60)
+    parser.add_argument("--batch-size", type=int, default=5000)
+    parser.add_argument("--measurement", type=str, default="stop_events")
+    parser.add_argument("--progress-every", type=int, default=10000)
+    parser.add_argument("--chunk-days", type=int, default=1)
+    parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
 
@@ -102,7 +68,7 @@ def build_count_flux(bucket: str, start_iso: str, stop_iso: str) -> str:
 from(bucket: "{bucket}")
   |> range(start: time(v: "{start_iso}"), stop: time(v: "{stop_iso}"))
   |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
-  |> filter(fn: (r) => r["_field"] == "delay_seconds")
+  |> filter(fn: (r) => r["_field"] == "lat")
   |> filter(fn: (r) => exists r["vehicle_id"])
   |> filter(fn: (r) => exists r["route_id"])
   |> filter(fn: (r) => exists r["next_stop_id"])
@@ -130,7 +96,7 @@ def build_flux(bucket: str, start_iso: str, stop_iso: str) -> str:
 from(bucket: "{bucket}")
   |> range(start: time(v: "{start_iso}"), stop: time(v: "{stop_iso}"))
   |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
-  |> filter(fn: (r) => r["_field"] == "delay_seconds")
+  |> filter(fn: (r) => r["_field"] == "lat")
   |> filter(fn: (r) => exists r["vehicle_id"])
   |> filter(fn: (r) => exists r["route_id"])
   |> filter(fn: (r) => exists r["next_stop_id"])
@@ -159,10 +125,6 @@ def parse_record_time(record) -> datetime:
 
 
 def build_forward_chunks(days: int, chunk_days: int) -> List[Tuple[datetime, datetime]]:
-    """
-    Build chronological [start, stop) windows.
-    Oldest chunk comes first so tracker state advances in time correctly.
-    """
     now = datetime.now(timezone.utc)
     overall_start = now - timedelta(days=days)
 
@@ -272,7 +234,7 @@ def main():
                         rate = chunk_rows_seen / elapsed if elapsed > 0 else 0.0
                         pct = (chunk_rows_seen / chunk_total_rows) * 100 if chunk_total_rows > 0 else 0.0
                         remaining_rows = max(chunk_total_rows - chunk_rows_seen, 0)
-                        eta_seconds = remaining_rows / rate if rate > 0 else 0
+                        eta_seconds = remaining_rows / rate if rate > 0 else 0.0
 
                         print(
                             f"Chunk {chunk_index}/{len(chunks)}: "
@@ -291,7 +253,6 @@ def main():
                     direction_id = values.get("direction_id")
                     vehicle_label = values.get("vehicle_label")
                     next_stop_sequence = safe_int(values.get("next_stop_sequence"))
-                    delay_seconds = safe_int(record.get_value())
 
                     if not vehicle_id or not trip_id or not route_id or not next_stop_id:
                         continue
@@ -306,7 +267,7 @@ def main():
                         direction_id=str(direction_id) if direction_id not in (None, "") else None,
                         vehicle_label=str(vehicle_label) if vehicle_label not in (None, "") else None,
                         next_stop_sequence=next_stop_sequence,
-                        delay_seconds=delay_seconds,
+                        delay_seconds=None,
                     )
 
                     stop_event = tracker.process_snapshot(snapshot)
@@ -323,7 +284,6 @@ def main():
                                 f"route_id={stop_event.route_id} "
                                 f"trip_id={stop_event.trip_id} "
                                 f"vehicle_id={stop_event.vehicle_id} "
-                                f"delay={stop_event.delay_seconds} "
                                 f"time={stop_event.observed_at.isoformat()}"
                             )
                         continue

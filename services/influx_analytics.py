@@ -74,13 +74,13 @@ from(bucket: "{self.bucket}")
         self.client.close()
 
     def stop_ontime_percentage(
-    self,
-    stop_id: str,
-    target_hour: int,
-    route_id=None,
-    threshold_seconds: int = 60,
-    hour_window: int = 1,
-) -> Dict[str, Any]:
+        self,
+        stop_id: str,
+        target_hour: int,
+        route_id=None,
+        threshold_seconds: int = 60,
+        hour_window: int = 1,
+    ) -> Dict[str, Any]:
         def build_flux(lookback_days: int, use_hour_filter: bool) -> str:
             min_hour = max(0, target_hour - hour_window)
             max_hour = min(23, target_hour + hour_window)
@@ -119,11 +119,7 @@ from(bucket: "{self.bucket}")
     '''
             return flux
 
-        def summarize(
-            tables,
-            lookback_days_used: int,
-            time_filter_applied: bool,
-        ) -> Dict[str, Any]:
+        def summarize(tables, lookback_days_used: int, time_filter_applied: bool) -> Dict[str, Any]:
             total = 0
             on_time_count = 0
             matched_routes = set()
