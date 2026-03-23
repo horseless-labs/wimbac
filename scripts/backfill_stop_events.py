@@ -71,34 +71,24 @@ def get_client() -> InfluxDBClient:
         timeout=120000,
     )
 
-
 def build_flux(bucket: str, start_iso: str) -> str:
-    # Only depend on columns known to exist in older data:
-    # vehicle_id, route_id, next_stop_id, _time
-    #
-    # We intentionally do NOT require trip_id/start_date/direction_id/vehicle_label
-    # in the pivot row key, because older rows may not have them.
     return f"""
 from(bucket: "{bucket}")
   |> range(start: time(v: "{start_iso}"))
   |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
-  |> filter(fn: (r) => r["_field"] == "delay_seconds" or r["_field"] == "next_stop_sequence")
+  |> filter(fn: (r) => r["_field"] == "delay_seconds")
+  |> filter(fn: (r) => exists r["next_stop_id"])
+  |> filter(fn: (r) => exists r["route_id"])
+  |> filter(fn: (r) => exists r["vehicle_id"])
   |> keep(columns: [
       "_time",
-      "_field",
       "_value",
       "vehicle_id",
       "route_id",
       "next_stop_id"
   ])
-  |> pivot(
-      rowKey: ["_time", "vehicle_id", "route_id", "next_stop_id"],
-      columnKey: ["_field"],
-      valueColumn: "_value"
-  )
   |> sort(columns: ["vehicle_id", "route_id", "_time"])
 """
-
 
 def parse_record_time(record) -> datetime:
     dt = record.get_time()
@@ -194,6 +184,8 @@ def main():
                     route_id=str(route_id),
                 )
 
+                delay_seconds = safe_int(record.get_value())
+
                 snapshot = VehicleSnapshot(
                     vehicle_id=str(vehicle_id),
                     trip_id=trip_id,
@@ -203,8 +195,8 @@ def main():
                     start_date=None,
                     direction_id=None,
                     vehicle_label=None,
-                    next_stop_sequence=safe_int(values.get("next_stop_sequence")),
-                    delay_seconds=safe_int(values.get("delay_seconds")),
+                    next_stop_sequence=None,
+                    delay_seconds=delay_seconds,
                 )
 
                 stop_event = tracker.process_snapshot(snapshot)
