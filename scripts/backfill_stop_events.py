@@ -4,7 +4,7 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 from influxdb_client import InfluxDBClient
 from influxdb_client.client.write_api import SYNCHRONOUS
@@ -18,7 +18,7 @@ from services.stop_event_state import (
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Backfill derived stop_events from historical vehicle_status data."
+        description="Backfill derived stop_events from historical vehicle_status data in day-sized chunks."
     )
     parser.add_argument(
         "--days",
@@ -48,7 +48,13 @@ def parse_args():
         "--progress-every",
         type=int,
         default=10000,
-        help="Print progress every N rows (default: 10000)",
+        help="Print progress every N rows within a day chunk (default: 10000)",
+    )
+    parser.add_argument(
+        "--chunk-days",
+        type=int,
+        default=1,
+        help="Number of days per query chunk (default: 1)",
     )
     parser.add_argument(
         "--dry-run",
@@ -79,10 +85,10 @@ def get_client() -> InfluxDBClient:
     )
 
 
-def build_count_flux(bucket: str, start_iso: str) -> str:
+def build_count_flux(bucket: str, start_iso: str, stop_iso: str) -> str:
     return f"""
 from(bucket: "{bucket}")
-  |> range(start: time(v: "{start_iso}"))
+  |> range(start: time(v: "{start_iso}"), stop: time(v: "{stop_iso}"))
   |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
   |> filter(fn: (r) => r["_field"] == "delay_seconds")
   |> filter(fn: (r) => exists r["vehicle_id"])
@@ -92,8 +98,8 @@ from(bucket: "{bucket}")
 """
 
 
-def get_total_rows(query_api, bucket: str, org: str, start_iso: str) -> int:
-    flux = build_count_flux(bucket=bucket, start_iso=start_iso)
+def get_total_rows(query_api, bucket: str, org: str, start_iso: str, stop_iso: str) -> int:
+    flux = build_count_flux(bucket=bucket, start_iso=start_iso, stop_iso=stop_iso)
     tables = query_api.query(query=flux, org=org)
 
     total = 0
@@ -106,10 +112,10 @@ def get_total_rows(query_api, bucket: str, org: str, start_iso: str) -> int:
     return total
 
 
-def build_flux(bucket: str, start_iso: str) -> str:
+def build_flux(bucket: str, start_iso: str, stop_iso: str) -> str:
     return f"""
 from(bucket: "{bucket}")
-  |> range(start: time(v: "{start_iso}"))
+  |> range(start: time(v: "{start_iso}"), stop: time(v: "{stop_iso}"))
   |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
   |> filter(fn: (r) => r["_field"] == "delay_seconds")
   |> filter(fn: (r) => exists r["next_stop_id"])
@@ -175,14 +181,32 @@ def format_eta(seconds_remaining: float) -> str:
     return f"{seconds}s"
 
 
+def build_reverse_chunks(days: int, chunk_days: int) -> List[Tuple[datetime, datetime]]:
+    """
+    Build reverse-chronological [start, stop) windows.
+    Most recent chunk comes first.
+    """
+    now = datetime.now(timezone.utc)
+    chunks: List[Tuple[datetime, datetime]] = []
+
+    current_stop = now
+    remaining_days = days
+
+    while remaining_days > 0:
+        span = min(chunk_days, remaining_days)
+        current_start = current_stop - timedelta(days=span)
+        chunks.append((current_start, current_stop))
+        current_stop = current_start
+        remaining_days -= span
+
+    return chunks
+
+
 def main():
     args = parse_args()
 
     bucket = os.environ.get("INFLUX_BUCKET", "wimbac")
     org = os.environ.get("INFLUX_ORG", "Horseless Labs")
-
-    start_dt = datetime.now(timezone.utc) - timedelta(days=args.days)
-    start_iso = start_dt.isoformat()
 
     tracker = StopEventTracker(
         on_time_threshold_seconds=args.threshold_seconds,
@@ -193,120 +217,154 @@ def main():
     query_api = client.query_api()
     write_api = client.write_api(write_options=SYNCHRONOUS)
 
-    flux = build_flux(bucket=bucket, start_iso=start_iso)
+    chunks = build_reverse_chunks(days=args.days, chunk_days=args.chunk_days)
 
-    print(f"Backfilling {args.measurement} from vehicle_status since {start_iso}")
+    print(f"Backfilling {args.measurement} from vehicle_status")
     print(f"Bucket: {bucket}")
     print(f"Org: {org}")
     print(f"Dry run: {args.dry_run}")
-    print("Counting total rows...")
-    total_rows = get_total_rows(query_api, bucket, org, start_iso)
-    print(f"Total rows to process: {total_rows}")
-    print("Querying historical snapshots...")
+    print(f"Total lookback days: {args.days}")
+    print(f"Chunk size (days): {args.chunk_days}")
+    print(f"Chunk count: {len(chunks)}")
+    print("Processing newest chunks first...\n")
 
-    tables = query_api.query(query=flux, org=org)
-
-    derived_points: List = []
-    rows_seen = 0
-    events_detected = 0
-    events_written = 0
-    started_at = time.time()
+    grand_rows_seen = 0
+    grand_events_detected = 0
+    grand_events_written = 0
+    overall_started_at = time.time()
 
     try:
-        for table in tables:
-            for record in table.records:
-                rows_seen += 1
+        for chunk_index, (chunk_start, chunk_stop) in enumerate(chunks, start=1):
+            start_iso = chunk_start.isoformat()
+            stop_iso = chunk_stop.isoformat()
 
-                if rows_seen % args.progress_every == 0:
-                    elapsed = time.time() - started_at
-                    rate = rows_seen / elapsed if elapsed > 0 else 0.0
+            print(f"=== Chunk {chunk_index}/{len(chunks)} ===")
+            print(f"Window: {start_iso} -> {stop_iso}")
+            print("Counting total rows for chunk...")
 
-                    if total_rows > 0:
-                        pct = (rows_seen / total_rows) * 100
-                        remaining_rows = max(total_rows - rows_seen, 0)
+            chunk_total_rows = get_total_rows(
+                query_api=query_api,
+                bucket=bucket,
+                org=org,
+                start_iso=start_iso,
+                stop_iso=stop_iso,
+            )
+
+            print(f"Chunk rows to process: {chunk_total_rows}")
+
+            if chunk_total_rows == 0:
+                print("No rows in this chunk.\n")
+                continue
+
+            flux = build_flux(bucket=bucket, start_iso=start_iso, stop_iso=stop_iso)
+            print("Querying historical snapshots for chunk...")
+
+            tables = query_api.query(query=flux, org=org)
+
+            chunk_rows_seen = 0
+            chunk_events_detected = 0
+            chunk_started_at = time.time()
+            derived_points: List = []
+
+            for table in tables:
+                for record in table.records:
+                    chunk_rows_seen += 1
+                    grand_rows_seen += 1
+
+                    if chunk_rows_seen % args.progress_every == 0:
+                        elapsed = time.time() - chunk_started_at
+                        rate = chunk_rows_seen / elapsed if elapsed > 0 else 0.0
+                        pct = (chunk_rows_seen / chunk_total_rows) * 100 if chunk_total_rows > 0 else 0.0
+                        remaining_rows = max(chunk_total_rows - chunk_rows_seen, 0)
                         eta_seconds = remaining_rows / rate if rate > 0 else 0
+
                         print(
-                            f"Processed {rows_seen}/{total_rows} rows "
+                            f"Chunk {chunk_index}/{len(chunks)}: "
+                            f"{chunk_rows_seen}/{chunk_total_rows} rows "
                             f"({pct:.2f}%) | {rate:.0f} rows/sec | ETA {format_eta(eta_seconds)}"
                         )
-                    else:
-                        print(f"Processed {rows_seen} rows | {rate:.0f} rows/sec")
 
-                values = record.values
-                observed_at = parse_record_time(record)
+                    values = record.values
+                    observed_at = parse_record_time(record)
 
-                vehicle_id = values.get("vehicle_id")
-                route_id = values.get("route_id")
-                next_stop_id = values.get("next_stop_id")
+                    vehicle_id = values.get("vehicle_id")
+                    route_id = values.get("route_id")
+                    next_stop_id = values.get("next_stop_id")
 
-                if not vehicle_id or not route_id or not next_stop_id:
-                    continue
+                    if not vehicle_id or not route_id or not next_stop_id:
+                        continue
 
-                trip_id = make_synthetic_trip_id(
-                    observed_at=observed_at,
-                    vehicle_id=str(vehicle_id),
-                    route_id=str(route_id),
-                )
+                    trip_id = make_synthetic_trip_id(
+                        observed_at=observed_at,
+                        vehicle_id=str(vehicle_id),
+                        route_id=str(route_id),
+                    )
 
-                delay_seconds = safe_int(record.get_value())
+                    delay_seconds = safe_int(record.get_value())
 
-                snapshot = VehicleSnapshot(
-                    vehicle_id=str(vehicle_id),
-                    trip_id=trip_id,
-                    route_id=str(route_id),
-                    next_stop_id=str(next_stop_id),
-                    observed_at=observed_at,
-                    start_date=None,
-                    direction_id=None,
-                    vehicle_label=None,
-                    next_stop_sequence=None,
-                    delay_seconds=delay_seconds,
-                )
+                    snapshot = VehicleSnapshot(
+                        vehicle_id=str(vehicle_id),
+                        trip_id=trip_id,
+                        route_id=str(route_id),
+                        next_stop_id=str(next_stop_id),
+                        observed_at=observed_at,
+                        start_date=None,
+                        direction_id=None,
+                        vehicle_label=None,
+                        next_stop_sequence=None,
+                        delay_seconds=delay_seconds,
+                    )
 
-                stop_event = tracker.process_snapshot(snapshot)
-                if stop_event is None:
-                    continue
+                    stop_event = tracker.process_snapshot(snapshot)
+                    if stop_event is None:
+                        continue
 
-                events_detected += 1
+                    chunk_events_detected += 1
+                    grand_events_detected += 1
 
-                if args.dry_run:
-                    if events_detected <= 10:
-                        print(
-                            f"[sample event] stop_id={stop_event.stop_id} "
-                            f"route_id={stop_event.route_id} "
-                            f"trip_id={stop_event.trip_id} "
-                            f"vehicle_id={stop_event.vehicle_id} "
-                            f"delay={stop_event.delay_seconds} "
-                            f"time={stop_event.observed_at.isoformat()}"
-                        )
-                    continue
+                    if args.dry_run:
+                        if grand_events_detected <= 10:
+                            print(
+                                f"[sample event] stop_id={stop_event.stop_id} "
+                                f"route_id={stop_event.route_id} "
+                                f"trip_id={stop_event.trip_id} "
+                                f"vehicle_id={stop_event.vehicle_id} "
+                                f"delay={stop_event.delay_seconds} "
+                                f"time={stop_event.observed_at.isoformat()}"
+                            )
+                        continue
 
-                derived_points.append(
-                    build_point_for_measurement(stop_event, args.measurement)
-                )
+                    derived_points.append(
+                        build_point_for_measurement(stop_event, args.measurement)
+                    )
 
-                if len(derived_points) >= args.batch_size:
-                    write_api.write(bucket=bucket, org=org, record=derived_points)
-                    events_written += len(derived_points)
-                    print(f"Wrote {events_written} events so far...")
-                    derived_points.clear()
+                    if len(derived_points) >= args.batch_size:
+                        write_api.write(bucket=bucket, org=org, record=derived_points)
+                        grand_events_written += len(derived_points)
+                        print(f"Wrote {grand_events_written} events so far...")
+                        derived_points.clear()
 
-        if not args.dry_run and derived_points:
-            write_api.write(bucket=bucket, org=org, record=derived_points)
-            events_written += len(derived_points)
-            derived_points.clear()
+            if not args.dry_run and derived_points:
+                write_api.write(bucket=bucket, org=org, record=derived_points)
+                grand_events_written += len(derived_points)
+                derived_points.clear()
 
-        elapsed = time.time() - started_at
+            chunk_elapsed = time.time() - chunk_started_at
+            print(f"Chunk complete in {format_eta(chunk_elapsed)}")
+            print(f"Chunk rows scanned:    {chunk_rows_seen}")
+            print(f"Chunk events detected: {chunk_events_detected}\n")
 
-        print("\nDone.")
-        print(f"Rows scanned:      {rows_seen}")
-        print(f"Events detected:   {events_detected}")
-        print(f"Elapsed:           {format_eta(elapsed)}")
+        overall_elapsed = time.time() - overall_started_at
+
+        print("Done.")
+        print(f"Total rows scanned:      {grand_rows_seen}")
+        print(f"Total events detected:   {grand_events_detected}")
+        print(f"Total elapsed:           {format_eta(overall_elapsed)}")
         if args.dry_run:
             print("No writes performed (dry run).")
         else:
-            print(f"Events written:    {events_written}")
-            print(f"Measurement:       {args.measurement}")
+            print(f"Total events written:    {grand_events_written}")
+            print(f"Measurement:             {args.measurement}")
 
     finally:
         client.close()
