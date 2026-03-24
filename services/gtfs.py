@@ -122,88 +122,47 @@ def merge_trip_updates_and_positions(update_url, pos_url):
 
         vp_dict = parse_vehicle_position(vp) if vp else {}
 
-        # --- THE FIX: Look in the TripUpdate if the VehiclePosition is empty ---
-        # 1. Try to get stop_id from the GPS (VehiclePosition)
-        stop_id = vp_dict.get("stop_id")
-        
-        # 2. FALLBACK: If GPS doesn't have it, take the first upcoming stop from the Schedule (TripUpdate)
-        # If the GPS doesn't have a stop, or if we want to be "stickier":
-        if not stop_id and tu_dict.get("stop_time_updates"):
-            # Grab the stop_id from the VERY FIRST upcoming stop in the schedule
-            # This ensures "02675" gets recorded as soon as the bus is headed that way
-            first_update = tu_dict["stop_time_updates"][0]
-            stop_id = next((stu.get("stop_id") for stu in updates[:3] if stu.get("stop_id")), None)
-        # 3. Get delay from the Trip Update
-        delay = None
+        # --- THE INTERPOLATION FIX ---
+        # Instead of picking one stop, we project the bus onto its next 5 stops.
+        # This fills the "gaps" between major timing points like Warrensville/Cedar.
+        relevant_stops = []
         if tu_dict.get("stop_time_updates"):
             updates = tu_dict["stop_time_updates"]
-            # Find the first update that actually has a delay value
-            for stu in updates[:3]:
-                arrival_delay = stu.get("arrival", {}).get("delay")
-                departure_delay = stu.get("departure", {}).get("delay")
-                delay = arrival_delay if arrival_delay is not None else departure_delay
-                if delay is not None:
-                    break
+            # Get the next 5 stop IDs from the schedule
+            relevant_stops = [
+                stu.get("stop_id") for stu in updates[:5] 
+                if stu.get("stop_id")
+            ]
 
-        merged_row = {
-            "trip_id": tu_dict["trip_id"] or vp_dict.get("vp_trip_id"),
-            "start_date": tu_dict["start_date"] or vp_dict.get("vp_start_date"),
-            "route_id": tu_dict["route_id"] or vp_dict.get("vp_route_id"),
-            "direction_id": tu_dict["direction_id"] or vp_dict.get("vp_direction_id"),
-            "vehicle_id": vp_dict.get("vehicle_id") or tu_dict["tu_vehicle_id"],
-            "vehicle_label": vp_dict.get("vehicle_label") or tu_dict["tu_vehicle_label"],
-            "lat": vp_dict.get("lat"),
-            "lon": vp_dict.get("lon"),
-            "stop_id": stop_id,  # This is the "Link"
-            "delay_seconds": delay,
-            "current_stop_sequence": vp_dict.get("current_stop_sequence"),
-            "vp_timestamp": vp_dict.get("vp_timestamp"),
-            "tu_timestamp": tu_dict["tu_timestamp"],
-        }
-        merged.append(merged_row)
+        # Get the primary delay from the first upcoming stop
+        delay = None
+        if tu_dict.get("stop_time_updates"):
+            stu = tu_dict["stop_time_updates"][0]
+            # Use arrival delay if available, otherwise departure
+            arrival = stu.get("arrival", {}) or {}
+            departure = stu.get("departure", {}) or {}
+            delay = arrival.get("delay") if arrival.get("delay") is not None else departure.get("delay")
+
+        # Create a record for EVERY stop in the 'look-ahead' window
+        for sid in relevant_stops:
+            # Ensure we maintain the leading zero format (08519)
+            formatted_sid = str(sid).strip().zfill(5) if str(sid).isdigit() else str(sid)
+            
+            merged_row = {
+                "trip_id": tu_dict["trip_id"] or vp_dict.get("vp_trip_id"),
+                "start_date": tu_dict["start_date"] or vp_dict.get("vp_start_date"),
+                "route_id": tu_dict["route_id"] or vp_dict.get("vp_route_id"),
+                "direction_id": tu_dict["direction_id"] or vp_dict.get("vp_direction_id"),
+                "vehicle_id": vp_dict.get("vehicle_id") or tu_dict["tu_vehicle_id"],
+                "vehicle_label": vp_dict.get("vehicle_label") or tu_dict["tu_vehicle_label"],
+                "lat": vp_dict.get("lat"),
+                "lon": vp_dict.get("lon"),
+                "stop_id": formatted_sid,  # The current stop in the loop
+                "delay_seconds": delay,
+                "current_stop_sequence": vp_dict.get("current_stop_sequence"),
+                "vp_timestamp": vp_dict.get("vp_timestamp"),
+                "tu_timestamp": tu_dict["tu_timestamp"],
+            }
+            merged.append(merged_row)
 
     return merged
-
-if __name__ == "__main__":
-    # Use your real URLs here or import from config
-    import sys
-    import os
-
-    sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-
-    from config import update_url, pos_url
-    print("Running GTFS debug check...\n")
-
-    merged = merge_trip_updates_and_positions(update_url, pos_url)
-
-    total = len(merged)
-    with_trip_id = [row for row in merged if row.get("trip_id")]
-    without_trip_id = [row for row in merged if not row.get("trip_id")]
-
-    print(f"Total merged rows: {total}")
-    print(f"Rows WITH trip_id: {len(with_trip_id)}")
-    print(f"Rows WITHOUT trip_id: {len(without_trip_id)}")
-
-    print("\n--- SAMPLE WITH trip_id ---")
-    if with_trip_id:
-        print(with_trip_id[0])
-    else:
-        print("None found")
-
-    print("\n--- SAMPLE WITHOUT trip_id ---")
-    if without_trip_id:
-        print(without_trip_id[0])
-    else:
-        print("All rows have trip_id")
-
-    # Extra: uniqueness check
-    trip_ids = [row["trip_id"] for row in with_trip_id]
-    unique_ids = set(trip_ids)
-
-    print(f"\nUnique trip_id count: {len(unique_ids)}")
-
-    if unique_ids:
-        print("Sample trip_ids:")
-        print(list(unique_ids)[:10])
-
-    print("\nDone.")
