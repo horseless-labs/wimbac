@@ -115,7 +115,6 @@ def merge_trip_updates_and_positions(update_url, pos_url):
         vkey = vehicle_key_from_desc(tu.vehicle) if tu.HasField("vehicle") else ""
 
         vp = None
-        # Join priority: (trip_id,start_date) → vehicle_id/label fallback
         if any(tkey) and tkey in by_trip:
             vp = by_trip[tkey]
         elif vkey and vkey in by_vehicle:
@@ -123,30 +122,36 @@ def merge_trip_updates_and_positions(update_url, pos_url):
 
         vp_dict = parse_vehicle_position(vp) if vp else {}
 
+        # --- THE FIX: Look in the TripUpdate if the VehiclePosition is empty ---
+        # 1. Try to get stop_id from the GPS (VehiclePosition)
+        stop_id = vp_dict.get("stop_id")
+        
+        # 2. FALLBACK: If GPS doesn't have it, take the first upcoming stop from the Schedule (TripUpdate)
+        if not stop_id and tu_dict.get("stop_time_updates"):
+            stop_id = tu_dict["stop_time_updates"][0].get("stop_id")
+
+        # 3. Get delay from the Trip Update
+        delay = None
+        if tu_dict.get("stop_time_updates"):
+            # Grab the delay from the first upcoming stop
+            stu = tu_dict["stop_time_updates"][0]
+            # Look for delay in arrival or departure
+            delay = stu.get("arrival", {}).get("delay") or stu.get("departure", {}).get("delay")
+
         merged_row = {
             "trip_id": tu_dict["trip_id"] or vp_dict.get("vp_trip_id"),
             "start_date": tu_dict["start_date"] or vp_dict.get("vp_start_date"),
             "route_id": tu_dict["route_id"] or vp_dict.get("vp_route_id"),
             "direction_id": tu_dict["direction_id"] or vp_dict.get("vp_direction_id"),
-
             "vehicle_id": vp_dict.get("vehicle_id") or tu_dict["tu_vehicle_id"],
             "vehicle_label": vp_dict.get("vehicle_label") or tu_dict["tu_vehicle_label"],
-
             "lat": vp_dict.get("lat"),
             "lon": vp_dict.get("lon"),
-            "bearing": vp_dict.get("bearing"),
-            "speed_mps": vp_dict.get("speed_mps"),
-
-            "vp_timestamp": vp_dict.get("vp_timestamp"),
-            "vp_timestamp_iso": vp_dict.get("vp_timestamp_iso"),
-            "tu_timestamp": tu_dict["tu_timestamp"],
-            "tu_timestamp_iso": tu_dict["tu_timestamp_iso"],
-
-            "current_status": vp_dict.get("current_status"),
+            "stop_id": stop_id,  # This is the "Link"
+            "delay_seconds": delay,
             "current_stop_sequence": vp_dict.get("current_stop_sequence"),
-            "stop_id": vp_dict.get("stop_id"),
-
-            "stop_time_updates": tu_dict["stop_time_updates"],
+            "vp_timestamp": vp_dict.get("vp_timestamp"),
+            "tu_timestamp": tu_dict["tu_timestamp"],
         }
         merged.append(merged_row)
 
