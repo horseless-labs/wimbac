@@ -148,7 +148,6 @@ from(bucket: "{self.bucket}")
                         continue
 
                     vehicle_ids.add(str(vehicle_id))
-                    total += 1
 
                     record_route_id = record.values.get("route_id")
                     if record_route_id is not None:

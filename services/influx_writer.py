@@ -104,8 +104,8 @@ def save_to_influx(merged_data):
         direction_id_raw = item.get("direction_id")
         direction_id = None if direction_id_raw in (None, "") else str(direction_id_raw)
 
-        next_stop_id = safe_str(item.get("next_stop_id"))
-        next_stop_sequence = safe_int(item.get("next_stop_sequence"))
+        next_stop_id = safe_str(item.get("stop_id")) # Changed from "next_stop_id" to "stop_id"
+        next_stop_sequence = safe_int(item.get("current_stop_sequence")) # Alignment fix
         delay_seconds = safe_int(item.get("delay_seconds"))
 
         lat = safe_float(item.get("lat"))
