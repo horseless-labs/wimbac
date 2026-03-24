@@ -49,7 +49,8 @@ def routes_summary():
     finally:
         service.close()
 
-def stop_ontime_percentage(
+@analytics_bp.route("/api/analytics/stop-ontime", methods=["GET"])
+def stop_ontime(
     self,
     stop_id: str,
     target_hour: int,
