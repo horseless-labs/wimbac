@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Dict, Any
 from flask import Blueprint, jsonify, request
 
 from services.influx_analytics import InfluxAnalyticsService
