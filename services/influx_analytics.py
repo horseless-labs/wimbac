@@ -200,3 +200,67 @@ from(bucket: "{self.bucket}")
             "lookback_days_used": 30,
             "confidence": "none",
         }
+    
+    def get_stop_reliability(
+    self,
+    stop_id: str,
+    target_hour: int,
+    route_id=None,
+    threshold_seconds: int = 60,
+    hour_window: int = 1,
+) -> Dict[str, Any]:
+        # 1. Define the internal query builder
+        def build_flux(lookback_days: int, use_hour_filter: bool) -> str:
+            min_hour = (target_hour - hour_window) % 24
+            max_hour = (target_hour + hour_window) % 24
+
+            flux = f'''
+            import "date"
+            from(bucket: "wimbac")
+            |> range(start: -{lookback_days}d)
+            |> filter(fn: (r) => r["_measurement"] == "stop_events")
+            |> filter(fn: (r) => r["_field"] == "delay_seconds")
+            |> filter(fn: (r) => r["stop_id"] == "{stop_id}")
+            '''
+            if route_id:
+                flux += f'  |> filter(fn: (r) => r["route_id"] == "{route_id}")\n'
+
+            if use_hour_filter:
+                # Handle wrap-around hours (e.g., 23:00 +/- 2 hours)
+                if min_hour < max_hour:
+                    flux += f'  |> filter(fn: (r) => date.hour(t: r._time) >= {min_hour} and date.hour(t: r._time) <= {max_hour})\n'
+                else: # Overnight window
+                    flux += f'  |> filter(fn: (r) => date.hour(t: r._time) >= {min_hour} or date.hour(t: r._time) <= {max_hour})\n'
+
+            return flux
+
+        # 2. Execute Query Strategy (Narrow to Broad)
+        query_plans = [(14, True), (14, False), (30, False)]
+        
+        for days, use_filter in query_plans:
+            flux = build_flux(days, use_filter)
+            tables = self.query_api.query(org=self.org, query=flux)
+            
+            # Aggregate results
+            delays = []
+            for table in tables:
+                for record in table.records:
+                    if record.get_value() is not None:
+                        delays.append(abs(record.get_value()))
+
+            if not delays:
+                continue
+
+            sample_size = len(delays)
+            on_time_count = sum(1 for d in delays if d <= threshold_seconds)
+            
+            return {
+                "stop_id": stop_id,
+                "on_time_percentage": round((on_time_count / sample_size) * 100, 1),
+                "sample_size": sample_size,
+                "confidence": "strong" if sample_size > 10 else "limited" if sample_size > 3 else "low",
+                "lookback_days": days,
+                "time_filter_active": use_filter
+            }
+
+        return {"sample_size": 0, "confidence": "none"}

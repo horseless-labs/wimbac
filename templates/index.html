@@ -248,13 +248,13 @@
 
       const timestamp = new Date().toISOString();
       const url =
-        `/api/analytics/stop-ontime?stop_id=${encodeURIComponent(stop.stop_id)}` +
+        `/api/analytics/stop-reliability?stop_id=${encodeURIComponent(stop.stop_id)}` +
         `&timestamp=${encodeURIComponent(timestamp)}`;
 
       try {
         const res = await fetch(url);
         if (!res.ok) {
-          throw new Error(`stop-ontime ${res.status}`);
+          throw new Error(`stop-reliability ${res.status}`);
         }
 
         const data = await res.json();
@@ -307,7 +307,7 @@
 
         updateSelectedStopPopup(buildStopPopupHtml(stop, analyticsHtml));
       } catch (err) {
-        console.error(`Failed stop-ontime for stop ${stop.stop_id}:`, err);
+        console.error(`Failed stop-reliability for stop ${stop.stop_id}:`, err);
 
         if (requestId === latestStopRequestId && selectedStop && selectedStop.stop_id === stop.stop_id) {
           updateSelectedStopPopup(
