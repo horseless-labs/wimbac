@@ -127,8 +127,12 @@ def merge_trip_updates_and_positions(update_url, pos_url):
         stop_id = vp_dict.get("stop_id")
         
         # 2. FALLBACK: If GPS doesn't have it, take the first upcoming stop from the Schedule (TripUpdate)
+        # If the GPS doesn't have a stop, or if we want to be "stickier":
         if not stop_id and tu_dict.get("stop_time_updates"):
-            stop_id = tu_dict["stop_time_updates"][0].get("stop_id")
+            # Grab the stop_id from the VERY FIRST upcoming stop in the schedule
+            # This ensures "02675" gets recorded as soon as the bus is headed that way
+            first_update = tu_dict["stop_time_updates"][0]
+            stop_id = first_update.get("stop_id")
 
         # 3. Get delay from the Trip Update
         delay = None
