@@ -132,15 +132,18 @@ def merge_trip_updates_and_positions(update_url, pos_url):
             # Grab the stop_id from the VERY FIRST upcoming stop in the schedule
             # This ensures "02675" gets recorded as soon as the bus is headed that way
             first_update = tu_dict["stop_time_updates"][0]
-            stop_id = first_update.get("stop_id")
-
+            stop_id = next((stu.get("stop_id") for stu in updates[:3] if stu.get("stop_id")), None)
         # 3. Get delay from the Trip Update
         delay = None
         if tu_dict.get("stop_time_updates"):
-            # Grab the delay from the first upcoming stop
-            stu = tu_dict["stop_time_updates"][0]
-            # Look for delay in arrival or departure
-            delay = stu.get("arrival", {}).get("delay") or stu.get("departure", {}).get("delay")
+            updates = tu_dict["stop_time_updates"]
+            # Find the first update that actually has a delay value
+            for stu in updates[:3]:
+                arrival_delay = stu.get("arrival", {}).get("delay")
+                departure_delay = stu.get("departure", {}).get("delay")
+                delay = arrival_delay if arrival_delay is not None else departure_delay
+                if delay is not None:
+                    break
 
         merged_row = {
             "trip_id": tu_dict["trip_id"] or vp_dict.get("vp_trip_id"),
