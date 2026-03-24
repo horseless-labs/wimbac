@@ -51,6 +51,10 @@ def parse_dt(value):
     except: return None
 
 def save_to_influx(merged_data):
+    if merged_data:
+        print(f"DEBUG: First item keys: {merged_data[0].keys()}")
+        print(f"DEBUG: First item stop_id: {merged_data[0].get('stop_id')}")
+        print(f"DEBUG: First item next_stop_id: {merged_data[0].get('next_stop_id')}")
     points = []
     
     for item in merged_data:
