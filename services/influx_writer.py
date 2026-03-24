@@ -149,8 +149,7 @@ def save_to_influx(merged_data):
             point = point.field("bearing", bearing)
         if speed_mps is not None:
             point = point.field("speed_mps", speed_mps)
-        if delay_seconds is not None:
-            point = point.field("delay_seconds", delay_seconds)
+        point = point.field("delay_seconds", delay_seconds if delay_seconds is not None else 0)
         if next_stop_sequence is not None:
             point = point.field("next_stop_sequence", next_stop_sequence)
         if scheduled_departure_unix is not None:
