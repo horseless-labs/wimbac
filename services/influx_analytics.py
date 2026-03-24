@@ -1,8 +1,6 @@
 import os
 from typing import Any, Dict, List
-
 from influxdb_client import InfluxDBClient
-
 
 class InfluxAnalyticsService:
     def __init__(self):
@@ -20,20 +18,15 @@ class InfluxAnalyticsService:
         self.query_api = self.client.query_api()
 
     def vehicles_by_hour(self, hours: int = 72) -> List[Dict[str, Any]]:
-        """
-        Counts vehicle_status points by hour.
-        Uses lat field because every written point has lat/lon fields.
-        """
         flux = f"""
 from(bucket: "{self.bucket}")
   |> range(start: -{hours}h)
-  |> filter(fn: (r) => r["_measurement"] == "stop_events")
+  |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
   |> filter(fn: (r) => r["_field"] == "lat")
   |> aggregateWindow(every: 1h, fn: count, createEmpty: false)
   |> keep(columns: ["_time", "_value"])
   |> sort(columns: ["_time"])
 """
-
         tables = self.query_api.query(query=flux, org=self.org)
         rows = []
         for table in tables:
@@ -45,10 +38,6 @@ from(bucket: "{self.bucket}")
         return rows
 
     def routes_summary(self, hours: int = 24) -> List[Dict[str, Any]]:
-        """
-        Counts observations by route_id over the last N hours.
-        Uses lat field because each point has it, and route_id is a tag.
-        """
         flux = f"""
 from(bucket: "{self.bucket}")
   |> range(start: -{hours}h)
@@ -59,7 +48,6 @@ from(bucket: "{self.bucket}")
   |> keep(columns: ["route_id", "_value"])
   |> sort(columns: ["_value"], desc: true)
 """
-
         tables = self.query_api.query(query=flux, org=self.org)
         rows = []
         for table in tables:
@@ -72,193 +60,56 @@ from(bucket: "{self.bucket}")
 
     def close(self) -> None:
         self.client.close()
-
-    def stop_ontime_percentage(
-    self,
-    stop_id: str,
-    target_hour: int,
-    route_id=None,
-    threshold_seconds: int = 60,
-    hour_window: int = 1,
-) -> Dict[str, Any]:
-        def build_flux(lookback_days: int, use_hour_filter: bool) -> str:
-            min_hour = max(0, target_hour - hour_window)
-            max_hour = min(23, target_hour + hour_window)
-
-            flux = f'''
-    import "date"
-
-    from(bucket: "{self.bucket}")
-    |> range(start: -{lookback_days}d)
-    |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
-    |> filter(fn: (r) => r["_field"] == "delay_seconds")
-    |> filter(fn: (r) => r["next_stop_id"] == "{stop_id}")
-    |> fill(column: "_value", value: 0)
-    '''
-
-            if route_id:
-                flux += f'''  |> filter(fn: (r) => r["route_id"] == "{route_id}")
-    '''
-
-            if use_hour_filter:
-                flux += f'''  |> map(fn: (r) => ({{
-        r with hour: date.hour(t: r._time)
-    }}))
-    |> filter(fn: (r) => r.hour >= {min_hour} and r.hour <= {max_hour})
-    '''
-
-            flux += '''
-    |> group(columns: ["vehicle_id", "next_stop_id"])
-    |> sort(columns: ["_time"], desc: true)
-    |> first()
-    |> keep(columns: ["vehicle_id", "next_stop_id", "_time", "_value", "route_id"])
-    '''
-            return flux
-
-        def summarize(
-            tables,
-            lookback_days_used: int,
-            time_filter_applied: bool,
-        ) -> Dict[str, Any]:
-            total = 0
-            on_time_count = 0
-            matched_routes = set()
-            vehicle_ids = set()
-
-            for table in tables:
-                for record in table.records:
-                    # 1. Get the delay value, defaulting to 0 if it's missing/null
-                    raw_delay = record.get_value()
-                    
-                    # If the field is missing entirely or explicitly None, treat as 0
-                    delay = int(raw_delay) if raw_delay is not None else 0
-                    
-                    total += 1
-                    
-                    # 2. Evaluate against your threshold
-                    if abs(delay) <= threshold_seconds:
-                        on_time_count += 1
-
-                    vehicle_id = record.values.get("vehicle_id")
-                    if not vehicle_id:
-                        continue
-
-                    delay = record.get_value()
-                    if delay is None:
-                        continue
-
-                    vehicle_ids.add(str(vehicle_id))
-
-                    record_route_id = record.values.get("route_id")
-                    if record_route_id is not None:
-                        matched_routes.add(str(record_route_id))
-
-                    try:
-                        if abs(int(delay)) <= threshold_seconds:
-                            on_time_count += 1
-                    except Exception:
-                        continue
-
-            percentage = None if total == 0 else round((on_time_count / total) * 100, 2)
-
-            if total == 0:
-                confidence = "none"
-            elif total < 3:
-                confidence = "low"
-            elif total < 10:
-                confidence = "limited"
-            else:
-                confidence = "strong"
-
-            return {
-                "stop_id": stop_id,
-                "route_id": route_id,
-                "matched_route_ids": sorted(matched_routes),
-                "threshold_seconds": threshold_seconds,
-                "sample_size": total,
-                "distinct_vehicle_count": len(vehicle_ids),
-                "on_time_percentage": percentage,
-                "time_filter_applied": time_filter_applied,
-                "lookback_days_used": lookback_days_used,
-                "confidence": confidence,
-            }
-
-        query_plans = [
-            (14, True),
-            (14, False),
-            (30, False),
-        ]
-
-        for lookback_days, use_hour_filter in query_plans:
-            flux = build_flux(lookback_days, use_hour_filter)
-            tables = self.query_api.query(query=flux, org=self.org)
-            result = summarize(
-                tables,
-                lookback_days_used=lookback_days,
-                time_filter_applied=use_hour_filter,
-            )
-            if result["sample_size"] > 0:
-                return result
-
-        return {
-            "stop_id": stop_id,
-            "route_id": route_id,
-            "matched_route_ids": [],
-            "threshold_seconds": threshold_seconds,
-            "sample_size": 0,
-            "distinct_vehicle_count": 0,
-            "on_time_percentage": None,
-            "time_filter_applied": False,
-            "lookback_days_used": 30,
-            "confidence": "none",
-        }
     
     def get_stop_reliability(
-    self,
-    stop_id: str,
-    target_hour: int,
-    route_id=None,
-    threshold_seconds: int = 60,
-    hour_window: int = 1,
-) -> Dict[str, Any]:
-        # 1. Define the internal query builder
+        self,
+        stop_id: str,
+        target_hour: int,
+        route_id=None,
+        threshold_seconds: int = 60,
+        hour_window: int = 1,
+    ) -> Dict[str, Any]:
+        
+        # Ensure stop_id matches the padded format in InfluxDB (e.g., "00141")
+        search_id = str(stop_id).strip().zfill(5) if str(stop_id).strip().isdigit() else str(stop_id).strip()
+
         def build_flux(lookback_days: int, use_hour_filter: bool) -> str:
             min_hour = (target_hour - hour_window) % 24
             max_hour = (target_hour + hour_window) % 24
 
+            # Querying 'vehicle_status' for real-time reliability pings
             flux = f'''
             import "date"
-            from(bucket: "wimbac")
+            from(bucket: "{self.bucket}")
             |> range(start: -{lookback_days}d)
-            |> filter(fn: (r) => r["_measurement"] == "stop_events")
+            |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
             |> filter(fn: (r) => r["_field"] == "delay_seconds")
-            |> filter(fn: (r) => r["stop_id"] == "{stop_id}")
+            |> filter(fn: (r) => r["next_stop_id"] == "{search_id}")
             '''
+            
             if route_id:
                 flux += f'  |> filter(fn: (r) => r["route_id"] == "{route_id}")\n'
 
             if use_hour_filter:
-                # Handle wrap-around hours (e.g., 23:00 +/- 2 hours)
                 if min_hour < max_hour:
                     flux += f'  |> filter(fn: (r) => date.hour(t: r._time) >= {min_hour} and date.hour(t: r._time) <= {max_hour})\n'
-                else: # Overnight window
+                else:
                     flux += f'  |> filter(fn: (r) => date.hour(t: r._time) >= {min_hour} or date.hour(t: r._time) <= {max_hour})\n'
 
             return flux
 
-        # 2. Execute Query Strategy (Narrow to Broad)
-        query_plans = [(14, True), (14, False), (30, False)]
+        query_plans = [(7, True), (14, False), (30, False)]
         
         for days, use_filter in query_plans:
             flux = build_flux(days, use_filter)
             tables = self.query_api.query(org=self.org, query=flux)
             
-            # Aggregate results
             delays = []
             for table in tables:
                 for record in table.records:
-                    if record.get_value() is not None:
-                        delays.append(abs(record.get_value()))
+                    val = record.get_value()
+                    if val is not None:
+                        delays.append(abs(val))
 
             if not delays:
                 continue
@@ -267,12 +118,12 @@ from(bucket: "{self.bucket}")
             on_time_count = sum(1 for d in delays if d <= threshold_seconds)
             
             return {
-                "stop_id": stop_id,
+                "stop_id": search_id,
                 "on_time_percentage": round((on_time_count / sample_size) * 100, 1),
                 "sample_size": sample_size,
-                "confidence": "strong" if sample_size > 10 else "limited" if sample_size > 3 else "low",
+                "confidence": "strong" if sample_size > 20 else "limited" if sample_size > 5 else "low",
                 "lookback_days": days,
                 "time_filter_active": use_filter
             }
 
-        return {"sample_size": 0, "confidence": "none"}
+        return {"sample_size": 0, "confidence": "none", "stop_id": search_id}
