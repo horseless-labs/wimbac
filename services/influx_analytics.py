@@ -93,6 +93,7 @@ from(bucket: "{self.bucket}")
     |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
     |> filter(fn: (r) => r["_field"] == "delay_seconds")
     |> filter(fn: (r) => r["next_stop_id"] == "{stop_id}")
+    |> fill(column: "_value", value: 0)
     '''
 
             if route_id:
@@ -126,6 +127,18 @@ from(bucket: "{self.bucket}")
 
             for table in tables:
                 for record in table.records:
+                    # 1. Get the delay value, defaulting to 0 if it's missing/null
+                    raw_delay = record.get_value()
+                    
+                    # If the field is missing entirely or explicitly None, treat as 0
+                    delay = int(raw_delay) if raw_delay is not None else 0
+                    
+                    total += 1
+                    
+                    # 2. Evaluate against your threshold
+                    if abs(delay) <= threshold_seconds:
+                        on_time_count += 1
+
                     vehicle_id = record.values.get("vehicle_id")
                     if not vehicle_id:
                         continue
