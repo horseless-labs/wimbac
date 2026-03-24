@@ -105,11 +105,15 @@ from(bucket: "{self.bucket}")
             tables = self.query_api.query(org=self.org, query=flux)
             
             delays = []
+            found_routes = set()
             for table in tables:
                 for record in table.records:
-                    val = record.get_value()
-                    if val is not None:
-                        delays.append(abs(val))
+                    if record.get_value() is not None:
+                        delays.append(abs(record.get_value()))
+                        # Capture the route_id tag from the record
+                        r_id = record.values.get("route_id")
+                        if r_id:
+                            found_routes.add(r_id)
 
             if not delays:
                 continue
