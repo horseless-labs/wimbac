@@ -74,41 +74,21 @@ from(bucket: "{self.bucket}")
             search_id = str(stop_id).strip().zfill(5) if str(stop_id).strip().isdigit() else str(stop_id).strip()
 
             def build_flux(lookback_days: int, use_hour_filter: bool) -> str:
-                min_hour = (target_hour - hour_window) % 24
-                max_hour = (target_hour + hour_window) % 24
-
-                # 2. Start Query
+                # No pivot needed! No complex filtering!
                 flux = f'''
-                import "date"
                 from(bucket: "{self.bucket}")
                 |> range(start: -{lookback_days}d)
                 |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
+                |> filter(fn: (r) => r["next_stop_id"] == "{search_id}")
+                |> filter(fn: (r) => r["_field"] == "delay_seconds")
                 '''
+                # ... (add route and hour filters) ...
 
-                # 3. Pivot fields (delay_seconds, trip_id, next_stop_id) into columns
-                # This allows us to filter by 'next_stop_id' even if it's a field, not a tag.
-                flux += '|> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")\n'
-
-                # 4. Filter by the specific stop
-                # This checks the pivoted column 'next_stop_id'
-                flux += f'|> filter(fn: (r) => r["next_stop_id"] == "{search_id}")\n'
-                
-                if route_id:
-                    flux += f'|> filter(fn: (r) => r["route_id"] == "{route_id}")\n'
-
-                if use_hour_filter:
-                    if min_hour < max_hour:
-                        flux += f'|> filter(fn: (r) => date.hour(t: r._time) >= {min_hour} and date.hour(t: r._time) <= {max_hour})\n'
-                    else:
-                        flux += f'|> filter(fn: (r) => date.hour(t: r._time) >= {min_hour} or date.hour(t: r._time) <= {max_hour})\n'
-
-                # 5. DEDUPLICATION LOGIC
-                # Group by vehicle_id (tag) and trip_id (now a column via pivot)
-                # This collapses the 10,000 pings into 1 arrival per trip.
+                # The Deduplicator remains to keep sample sizes sane
                 flux += '''
-                |> group(columns: ["vehicle_id", "trip_id", "route_id"])
-                |> last(column: "_time")
-                |> group() 
+                |> group(columns: ["trip_id"])
+                |> last()
+                |> group()
                 '''
                 return flux
 
