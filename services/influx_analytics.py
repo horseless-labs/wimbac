@@ -75,13 +75,13 @@ from(bucket: "{self.bucket}")
             min_hour = (target_hour - hour_window) % 24
             max_hour = (target_hour + hour_window) % 24
 
-            # CHANGED: We now group by trip_id to ensure one record per bus visit
             flux = f'''
             import "date"
             from(bucket: "{self.bucket}")
             |> range(start: -{lookback_days}d)
             |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
             |> filter(fn: (r) => r["_field"] == "delay_seconds")
+            # Use vehicle_id for grouping since trip_id is currently a field (slow)
             |> filter(fn: (r) => r["next_stop_id"] == "{search_id}")
             '''
             
@@ -89,15 +89,17 @@ from(bucket: "{self.bucket}")
                 flux += f'  |> filter(fn: (r) => r["route_id"] == "{route_id}")\n'
 
             if use_hour_filter:
+                # Standard hour filtering logic
                 if min_hour < max_hour:
                     flux += f'  |> filter(fn: (r) => date.hour(t: r._time) >= {min_hour} and date.hour(t: r._time) <= {max_hour})\n'
                 else:
                     flux += f'  |> filter(fn: (r) => date.hour(t: r._time) >= {min_hour} or date.hour(t: r._time) <= {max_hour})\n'
 
-            # THE FIX: Group by trip_id and take the last ping for that trip at this stop.
-            # This turns 100 pings into 1 arrival event.
+            # THE PERFORMANCE + ACCURACY FIX:
+            # 1. Group by vehicle_id (since it's a tag) to separate individual bus runs.
+            # 2. Use 'max' or 'last' to pick the single most representative ping for that stop visit.
             flux += '''
-            |> group(columns: ["trip_id", "route_id"])
+            |> group(columns: ["vehicle_id", "route_id"])
             |> last()
             |> group() 
             '''
