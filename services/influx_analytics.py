@@ -70,21 +70,34 @@ from(bucket: "{self.bucket}")
             hour_window: int = 1,
         ) -> Dict[str, Any]:
             
-            # 1. Normalize stop_id to match your DB format (padded zeros)
+            # 1. Standardize the stop_id to match our padded tags in Influx
             search_id = str(stop_id).strip().zfill(5) if str(stop_id).strip().isdigit() else str(stop_id).strip()
 
             def build_flux(lookback_days: int, use_hour_filter: bool) -> str:
-                # No pivot needed! No complex filtering!
+                min_hour = (target_hour - hour_window) % 24
+                max_hour = (target_hour + hour_window) % 24
+
+                # 2. Optimized Query: Filtering by TAGS is lightning fast
                 flux = f'''
+                import "date"
                 from(bucket: "{self.bucket}")
                 |> range(start: -{lookback_days}d)
                 |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
                 |> filter(fn: (r) => r["next_stop_id"] == "{search_id}")
                 |> filter(fn: (r) => r["_field"] == "delay_seconds")
                 '''
-                # ... (add route and hour filters) ...
+                
+                if route_id:
+                    flux += f'|> filter(fn: (r) => r["route_id"] == "{route_id}")\n'
 
-                # The Deduplicator remains to keep sample sizes sane
+                if use_hour_filter:
+                    if min_hour < max_hour:
+                        flux += f'|> filter(fn: (r) => date.hour(t: r._time) >= {min_hour} and date.hour(t: r._time) <= {max_hour})\n'
+                    else:
+                        flux += f'|> filter(fn: (r) => date.hour(t: r._time) >= {min_hour} or date.hour(t: r._time) <= {max_hour})\n'
+
+                # 3. Deduplicate: Collapse the 10,000 pings into unique trip arrivals
+                # We group by trip_id (now a tag) and take the last ping before the bus moved on
                 flux += '''
                 |> group(columns: ["trip_id"])
                 |> last()
@@ -92,38 +105,38 @@ from(bucket: "{self.bucket}")
                 '''
                 return flux
 
+            # We can now safely query 14 or even 30 days without timing out
             query_plans = [(7, True), (14, False), (30, False)]
             
             for days, use_filter in query_plans:
                 flux = build_flux(days, use_filter)
                 try:
-                    # Set a healthy timeout because pivot() on large unindexed data is heavy
                     tables = self.query_api.query(org=self.org, query=flux)
+                    
+                    delays = []
+                    for table in tables:
+                        for record in table.records:
+                            val = record.get_value()
+                            if val is not None:
+                                # Use absolute value to measure general "off-schedule" deviance
+                                delays.append(abs(float(val)))
+
+                    if not delays:
+                        continue
+
+                    sample_size = len(delays)
+                    on_time_count = sum(1 for d in delays if d <= threshold_seconds)
+                    
+                    return {
+                        "stop_id": search_id,
+                        "on_time_percentage": round((on_time_count / sample_size) * 100, 1),
+                        "sample_size": sample_size,
+                        "confidence": "strong" if sample_size > 15 else "limited" if sample_size > 5 else "low",
+                        "lookback_days": days,
+                        "time_filter_active": use_filter
+                    }
                 except Exception as e:
-                    print(f"Query failed for stop {search_id}: {e}")
+                    print(f"Query optimization error or timeout: {e}")
                     continue
-                
-                delays = []
-                for table in tables:
-                    for record in table.records:
-                        # After pivot, the value is in the 'delay_seconds' column
-                        val = record.values.get("delay_seconds")
-                        if val is not None:
-                            delays.append(abs(float(val)))
-
-                if not delays:
-                    continue
-
-                sample_size = len(delays)
-                on_time_count = sum(1 for d in delays if d <= threshold_seconds)
-                
-                return {
-                    "stop_id": search_id,
-                    "on_time_percentage": round((on_time_count / sample_size) * 100, 1),
-                    "sample_size": sample_size,
-                    "confidence": "strong" if sample_size > 15 else "limited" if sample_size > 3 else "low",
-                    "lookback_days": days,
-                    "time_filter_active": use_filter
-                }
 
             return {"sample_size": 0, "confidence": "none", "stop_id": search_id}
