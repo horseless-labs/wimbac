@@ -34,4 +34,5 @@ def deep_audit(target_stop_id):
         print(f"Error: {e}")
 
 if __name__ == "__main__":
-    deep_audit("01718")
+    deep_audit("14355")
+    deep_audit("14354")

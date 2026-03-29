@@ -69,15 +69,13 @@ from(bucket: "{self.bucket}")
         threshold_seconds: int = 60,
         hour_window: int = 1,
     ) -> Dict[str, Any]:
-        
-        # Ensure stop_id matches the padded format in InfluxDB (e.g., "00141")
         search_id = str(stop_id).strip().zfill(5) if str(stop_id).strip().isdigit() else str(stop_id).strip()
 
         def build_flux(lookback_days: int, use_hour_filter: bool) -> str:
             min_hour = (target_hour - hour_window) % 24
             max_hour = (target_hour + hour_window) % 24
 
-            # Querying 'vehicle_status' for real-time reliability pings
+            # CHANGED: We now group by trip_id to ensure one record per bus visit
             flux = f'''
             import "date"
             from(bucket: "{self.bucket}")
@@ -96,24 +94,33 @@ from(bucket: "{self.bucket}")
                 else:
                     flux += f'  |> filter(fn: (r) => date.hour(t: r._time) >= {min_hour} or date.hour(t: r._time) <= {max_hour})\n'
 
+            # THE FIX: Group by trip_id and take the last ping for that trip at this stop.
+            # This turns 100 pings into 1 arrival event.
+            flux += '''
+            |> group(columns: ["trip_id", "route_id"])
+            |> last()
+            |> group() 
+            '''
             return flux
 
         query_plans = [(7, True), (14, False), (30, False)]
         
         for days, use_filter in query_plans:
             flux = build_flux(days, use_filter)
-            tables = self.query_api.query(org=self.org, query=flux)
+            try:
+                tables = self.query_api.query(org=self.org, query=flux)
+            except Exception as e:
+                print(f"Query failed: {e}")
+                continue
             
             delays = []
-            found_routes = set()
             for table in tables:
                 for record in table.records:
-                    if record.get_value() is not None:
-                        delays.append(abs(record.get_value()))
-                        # Capture the route_id tag from the record
-                        r_id = record.values.get("route_id")
-                        if r_id:
-                            found_routes.add(r_id)
+                    val = record.get_value()
+                    if val is not None:
+                        # We use the raw value for late/early. 
+                        # abs() is fine if you only care about 'off-schedule'
+                        delays.append(abs(val))
 
             if not delays:
                 continue
@@ -125,7 +132,7 @@ from(bucket: "{self.bucket}")
                 "stop_id": search_id,
                 "on_time_percentage": round((on_time_count / sample_size) * 100, 1),
                 "sample_size": sample_size,
-                "confidence": "strong" if sample_size > 20 else "limited" if sample_size > 5 else "low",
+                "confidence": "strong" if sample_size > 15 else "limited" if sample_size > 3 else "low",
                 "lookback_days": days,
                 "time_filter_active": use_filter
             }
