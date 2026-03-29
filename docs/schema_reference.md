@@ -1,109 +1,55 @@
-## WIMBAC Influx Schema Reference
+## WIMBAC InfluxDB Schema Reference (Updated 2026-03-29)
 
-This section lists the key fields and tags available in the `vehicle_status` measurement for use in Flux queries.
+This reference defines the `vehicle_status` measurement used for real-time transit tracking and historical analysis in the WIMBAC system.
 
 ### Measurement
+* **`vehicle_status`**: The primary bucket for all real-time GTFS-Realtime telemetry.
 
-* `vehicle_status`
-  Primary time-series dataset containing vehicle telemetry and GTFS-derived metadata.
+### Fields (Time-Series Values)
+Fields are the actual data points being measured. In Flux, these are accessed via `r._field` and `r._value`.
 
----
+* **`lat`** (float): Latitude of the vehicle.
+* **`lon`** (float): Longitude of the vehicle.
+* **`bearing`** (float): Direction of travel (0–359 degrees).
+* **`speed_mps`** (float): Current speed in meters per second.
+* **`occupancy_status`** (int/string): Current passenger load level (added for Weresense analytics).
+* **`congestion_level`** (int): Local traffic delay index derived from GTFS offsets.
 
-### Fields (values stored over time)
+> **Note:** We no longer treat `trip_id` as a field. It has been migrated entirely to **Tags** to ensure consistent series identity and faster filtering.
 
-Fields are accessed via `_field` and `_value`, or via `pivot()`.
+### Tags (Indexed Metadata)
+Tags are indexed dimensions used for high-performance filtering and grouping.
 
-* `lat` — latitude (float)
-* `lon` — longitude (float)
-* `bearing` — direction of travel in degrees (float)
-* `speed_mps` — vehicle speed in meters per second (float)
-* `trip_id` — GTFS trip identifier (string, sometimes treated as field depending on ingestion)
+* **`vehicle_id`**: Persistent unique identifier for the bus hardware.
+* **`vehicle_label`**: The human-readable fleet number (e.g., "3201").
+* **`route_id`**: The GTFS route identifier (e.g., "55-55A").
+* **`trip_id`**: **(Primary Index)** The unique GTFS trip instance identifier. 
+* **`direction_id`**: Binary route direction (0 or 1).
+* **`current_status`**: The vehicle's relationship to the next stop (e.g., `IN_TRANSIT_TO`, `STOPPED_AT`).
+* **`stop_id`**: The identifier for the upcoming or current stop.
 
-Notes:
+> **Architecture Tip:** Every unique combination of these tags creates a new **Series**. Avoid adding high-cardinality tags (like raw timestamps) here.
 
-* Each field is stored as a separate time-series.
-* Multiple fields at the same timestamp require `pivot()` to reconstruct a full “row.”
+### Updated Common Query Patterns
 
----
-
-### Tags (indexed dimensions for filtering/grouping)
-
-Tags define series identity and are used in `filter()` and `group()`.
-
-* `vehicle_id` — unique vehicle identifier (string)
-* `vehicle_label` — human-readable vehicle number (string)
-* `route_id` — transit route identifier (string)
-* `trip_id` — GTFS trip identifier (string)
-* `direction_id` — route direction (string/int, GTFS-specific)
-* `start_date` — service date in `YYYYMMDD` format (string)
-* `next_stop_id` — upcoming stop identifier (string) *(if present in ingestion)*
-
-Notes:
-
-* A **unique combination of tags + field = one time-series (series)**.
-* Adding more tags increases series cardinality and affects query behavior.
-
----
-
-### Special Columns (Flux system columns)
-
-These exist on every record:
-
-* `_time` — timestamp of the datapoint
-* `_measurement` — measurement name (`vehicle_status`)
-* `_field` — field name (e.g., `lat`, `speed_mps`)
-* `_value` — field value
-* `_start`, `_stop` — query time bounds
-
----
-
-### Common Query Patterns
-
-**Filter by tag**
-
+**Pivot to Row-Based Format**
+Since Influx stores fields separately, use this pattern to get a "Standard SQL" style row for the API:
 ```flux
-|> filter(fn: (r) => r.vehicle_id == "4058")
+from(bucket: "wimbac_telemetry")
+  |> range(start: -5m)
+  |> filter(fn: (r) => r._measurement == "vehicle_status")
+  |> pivot(rowKey:["_time", "vehicle_id"], columnKey: ["_field"], valueColumn: "_value")
 ```
 
-**Filter by field**
-
+**Filter by Active Trip**
 ```flux
-|> filter(fn: (r) => r._field == "lat")
+|> filter(fn: (r) => r.trip_id == "9876543")
+|> filter(fn: (r) => r._field == "speed_mps")
 ```
 
-**Group by tag**
+### Mental Model: The "Series" Concept
 
-```flux
-|> group(columns: ["route_id"])
-```
 
-**Reconstruct full records**
-
-```flux
-|> pivot(
-    rowKey: ["_time"],
-    columnKey: ["_field"],
-    valueColumn: "_value"
-)
-```
-
----
-
-### Mental Model (important)
-
-* Data is stored as **time-series, not rows**
-* Each `(field + tag set)` = its own series
-* Queries operate on **tables of series**, not a single table
-
-If output looks duplicated or fragmented, it is usually due to:
-
-* multiple series being returned
-* missing `group()` or `pivot()`
-
----
-
-If you want, next step I’d strongly recommend is adding a tiny section right after this:
-
-> “Common mistakes / gotchas”
-
-Because you’ve already hit like 3 of the classic ones (and you’ll hit them again at 2am otherwise).
+* **Data is a Stream:** Think of each `vehicle_id` + `trip_id` as a single ribbon of data moving through time.
+* **The Pivot is Key:** Until you `pivot()`, your latitude and longitude are technically in two different tables. 
+* **Tag vs Field:** If you need to `group()` by it (like showing all buses on Route 22), it **must** be a Tag.
