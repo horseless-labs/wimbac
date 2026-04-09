@@ -1,4 +1,5 @@
 from flask import Flask, render_template, jsonify, Response, request, g
+from flask_cors import CORS
 import atexit
 import os
 import math
@@ -19,6 +20,7 @@ from utils.geo import haversine_m
 import services.vehicle_state as vehicle_state
 
 app = Flask(__name__)
+CORS(app)
 
 atexit.register(vehicle_state.stop_vehicle_refresh_thread)
 
