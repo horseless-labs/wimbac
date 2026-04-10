@@ -14,6 +14,27 @@ function App() {
   const [selectedStop, setSelectedStop] = useState<Stop | null>(null);
   const [hintMessage, setHintMessage] = useState("<strong>Zoom in</strong> to see stops.");
   const [, setZoom] = useState(12);
+  const [reliabilityData, setReliabilityData] = useState<any | null>(null);
+
+  // 1. The unified click handler
+  const handleStopSelection = useCallback(async (stop: Stop) => {
+    setSelectedStop(stop);
+    setReliabilityData(null); // Show loading state in popup
+    setVehicles([]);          // Clear buses immediately for the new stop
+
+    try {
+      const { data } = await axios.get(`${API_BASE}/analytics/stop-reliability`, {
+        params: { 
+          stop_id: stop.stop_id, 
+          timestamp: new Date().toISOString() 
+        }
+      });
+      setReliabilityData(data);
+    } catch (e) {
+      console.error("Error fetching reliability", e);
+      setReliabilityData({ error: "Could not load analytics" });
+    }
+  }, []);
 
   const handleMapMove = useCallback(async (bounds: any, newZoom: number) => {
     setZoom(newZoom);
@@ -69,7 +90,8 @@ function App() {
         stops={stops} 
         vehicles={vehicles} 
         selectedStop={selectedStop}
-        onStopClick={setSelectedStop}
+        reliabilityData={reliabilityData} // 2. Pass this down to show in the popup
+        onStopClick={handleStopSelection} // 3. Switch from setSelectedStop to our new function
         onMove={handleMapMove}
       />
     </div>
