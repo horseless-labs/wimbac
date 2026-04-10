@@ -5,9 +5,8 @@ import MapComponent from './components/MapComponent';
 import Hint from './components/Hint';
 import type { Stop, Vehicle } from './types';
 
-// Adjust this to your Flask server's URL
-//const API_BASE = "http://localhost:8000/api"; //local
-const API_BASE = "/api" //production
+// Relative path for Nginx production
+const API_BASE = "/api"; 
 
 function App() {
   const [stops, setStops] = useState<Stop[]>([]);
@@ -16,7 +15,6 @@ function App() {
   const [hintMessage, setHintMessage] = useState("<strong>Zoom in</strong> to see stops.");
   const [, setZoom] = useState(12);
 
-  // Fetch stops when map moves
   const handleMapMove = useCallback(async (bounds: any, newZoom: number) => {
     setZoom(newZoom);
     if (newZoom < 13) {
@@ -41,7 +39,6 @@ function App() {
     }
   }, [selectedStop]);
 
-  // Polling for vehicles when a stop is selected
   useEffect(() => {
     if (!selectedStop) {
       setVehicles([]);
@@ -62,11 +59,11 @@ function App() {
 
     fetchVehicles();
     const timer = setInterval(fetchVehicles, 15000);
-    return () => clearInterval(timer); // Cleanup on unselect or component unmount
+    return () => clearInterval(timer);
   }, [selectedStop]);
 
   return (
-    <div style={{ height: '100vh', width: '100vw', position: 'relative' }}>
+    <div style={{ height: '100vh', width: '100vw', margin: 0, padding: 0 }}>
       <Hint message={hintMessage} visible={true} />
       <MapComponent 
         stops={stops} 
