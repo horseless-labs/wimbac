@@ -6,7 +6,8 @@ import Hint from './components/Hint';
 import type { Stop, Vehicle } from './types';
 
 // Adjust this to your Flask server's URL
-const API_BASE = "http://localhost:8000/api"; 
+//const API_BASE = "http://localhost:8000/api"; //local
+const API_BASE = "/api" //production
 
 function App() {
   const [stops, setStops] = useState<Stop[]>([]);
