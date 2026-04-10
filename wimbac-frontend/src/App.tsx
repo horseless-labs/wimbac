@@ -66,7 +66,7 @@ function App() {
   }, [selectedStop]);
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ height: '100vh', width: '100vw', position: 'relative' }}>
       <Hint message={hintMessage} visible={true} />
       <MapComponent 
         stops={stops} 
