@@ -37,14 +37,15 @@ export default function MapComponent({
       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
       <MapEvents onMove={onMove} />
 
-      {/* 1. Selected Stop Halo & Analytics */}
+      /* Selected Stop Halo & Analytics */
       {selectedStop && (
         <CircleMarker 
           center={[Number(selectedStop.lat), Number(selectedStop.lon)]}
           radius={12}
           pathOptions={{ color: '#111', weight: 3, fillOpacity: 0 }}
         >
-          <Popup>
+          {/* Add the 'eventHandlers' here to ensure it stays open/re-opens if clicked */}
+          <Popup autoPan={false} eventHandlers={{ add: (e) => e.target.openOn(e.target._map) }}>
             <div style={{ minWidth: '200px' }}>
               <strong>{selectedStop.stop_name}</strong>
               <hr style={{ margin: '8px 0', border: '0', borderTop: '1px solid #eee' }} />
@@ -55,12 +56,10 @@ export default function MapComponent({
                 <div className="popup-muted">{reliabilityData.error}</div>
               ) : (
                 <div className="popup-analytics">
-                  <div className="popup-analytics-title">On-time performance</div>
-                  <div className="popup-analytics-row">
-                    <b>{reliabilityData.on_time_percentage}%</b> on time
-                  </div>
+                  {/* ... your analytics JSX from before ... */}
+                  <b>{reliabilityData.on_time_percentage}%</b> on time
                   <div className="popup-muted">
-                    Based on {reliabilityData.distinct_trip_count || reliabilityData.sample_size} trips
+                      Based on {reliabilityData.distinct_trip_count || reliabilityData.sample_size} trips
                   </div>
                 </div>
               )}
