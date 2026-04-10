@@ -61,27 +61,42 @@ function App() {
   }, [selectedStop]);
 
   useEffect(() => {
-    if (!selectedStop) {
-      setVehicles([]);
-      return;
-    }
+    // 1. Immediate Cleanup: If the stop changes or is unselected, 
+    // wipe the buses and the reliability data instantly.
+    setVehicles([]);
+    setReliabilityData(null); 
+
+    if (!selectedStop) return;
 
     const fetchVehicles = async () => {
       try {
+        // Use the local selectedStop inside the effect
         const { data } = await axios.get(`${API_BASE}/vehicles_near`, {
-          params: { lat: selectedStop.lat, lon: selectedStop.lon, r_m: 800 }
+          params: { 
+            lat: selectedStop.lat, 
+            lon: selectedStop.lon, 
+            r_m: 800 
+          }
         });
+        console.log("Fetched vehicles:", data.length); // Quick debug log
         setVehicles(data);
-        setHintMessage(`<strong>${selectedStop.stop_name}</strong><br>${data.length} bus(es) nearby.`);
       } catch (e) {
         console.error("Error fetching vehicles", e);
       }
     };
 
+    // 2. Initial trigger
     fetchVehicles();
-    const timer = setInterval(fetchVehicles, 15000);
-    return () => clearInterval(timer);
-  }, [selectedStop]);
+
+    // 3. Set the interval and keep a reference to the ID
+    const timer = setInterval(fetchVehicles, 10000); // 10s is plenty for production
+
+    // 4. Critical Cleanup: This kills the old timer before starting a new one
+    return () => {
+      console.log("Cleaning up vehicle interval...");
+      clearInterval(timer);
+    };
+  }, [selectedStop]); // This ENTIRE block restarts the moment a new stop is clicked
 
   return (
     <div style={{ height: '100vh', width: '100vw', margin: 0, padding: 0 }}>

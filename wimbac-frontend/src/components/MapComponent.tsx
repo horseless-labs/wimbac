@@ -86,14 +86,20 @@ export default function MapComponent({ stops, vehicles, selectedStop, reliabilit
       {/* Render Vehicles */}
       {vehicles.map((v) => (
         <CircleMarker
-          key={`veh-${v.vehicle_id}`}
+          key={`veh-${v.vehicle_id || Math.random()}`} // Fallback key to prevent DOM collisions
           center={[v.lat, v.lon]}
           radius={10}
           pathOptions={{ color: '#ffffff', fillColor: '#2a9d8f', fillOpacity: 0.9, weight: 2 }}
         >
           <Popup>
-            🚌 <b>{v.vehicle_label || "Bus"}</b><br/>
-            Route: {v.route_id}
+            <div style={{ minWidth: '120px' }}>
+              {/* We use optional chaining and fallbacks to ensure it's never blank */}
+              🚌 <b>{v.vehicle_label || v.vehicle_label || "Unknown Bus"}</b><br/>
+              <strong>Route:</strong> {v.route_id || "N/A"}<br/>
+              <span style={{ fontSize: '10px', color: '#666' }}>
+                ID: {v.vehicle_id}
+              </span>
+            </div>
           </Popup>
         </CircleMarker>
       ))}
