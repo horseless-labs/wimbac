@@ -13,7 +13,7 @@ function App() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedStop, setSelectedStop] = useState<Stop | null>(null);
   const [hintMessage, setHintMessage] = useState("<strong>Zoom in</strong> to see stops.");
-  const [zoom, setZoom] = useState(12);
+  const [, setZoom] = useState(12);
 
   // Fetch stops when map moves
   const handleMapMove = useCallback(async (bounds: any, newZoom: number) => {

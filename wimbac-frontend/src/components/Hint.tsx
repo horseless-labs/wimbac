@@ -1,5 +1,4 @@
 // src/components/Hint.tsx
-import type { ReactNode } from 'react';
 
 interface HintProps {
   message: string;
