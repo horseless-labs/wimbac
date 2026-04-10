@@ -170,3 +170,9 @@ code {
         padding: 12px 14px;
       }
     }
+
+/* Ensure the map container specifically fills its parent */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+}
