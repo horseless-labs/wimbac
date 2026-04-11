@@ -1,162 +1,95 @@
-# WIMBAC
+# WIMBAC (When Is My Bus Actually Coming?)
 
-**Web-Integrated Monitoring of Bus Activity in Cleveland**
+**Web-Integrated Monitoring of Public Transit Activity in Cleveland**
 
-WIMBAC is a lightweight real-time transit monitoring system that ingests GTFS-Realtime feeds, stores vehicle telemetry in InfluxDB, and exposes a web interface for exploring bus activity across Cleveland.
+WIMBAC is a real-time transit analytics platform that ingests GTFS-Realtime feeds, persists vehicle telemetry in a time-series database, and visualizes system-wide activity through a modern React dashboard.
 
-Live: https://www.wimbac.com
+**Live:** [https://www.wimbac.com](https://www.wimbac.com)
 
 ## Overview
 
-WIMBAC collects real-time transit feeds and exposes them through a backend API and map interface.
+WIMBAC is a full-stack engineering exercise in high-frequency data ingestion, storage, and visualization. It moves beyond simple "map markers" to provide a platform for analyzing transit reliability and vehicle spatial relationships in real-time.
 
-Core features:
+### Core Features
+- **Asynchronous Ingestion:** 20–30s interval GTFS-RT ingestion pipeline.
+- **Time-Series Storage:** High-cardinality telemetry storage using InfluxDB.
+- **Modern Frontend:** Decoupled React/TypeScript SPA with responsive MapBox/Leaflet integration.
+- **Transit Analytics:** Stop-level reliability metrics and on-time performance analysis.
+- **Production Infrastructure:** High-performance deployment using Nginx as a reverse proxy and static asset server.
 
-- Real-time (20–30s interval) GTFS-RT ingestion  
-- Time-series storage of vehicle telemetry (InfluxDB)  
-- Spatial query API (nearest vehicles)  
-- Leaflet-based frontend visualization  
-- Production deployment (Gunicorn + Nginx on VPS)  
-
-The system is designed as an end-to-end exercise in ingestion, storage, API design, and deployment.
+---
 
 ## System Architecture
 
+
+
+```mermaid
+graph LR
+    A[GTFS-RT Feeds] --> B[Python Ingestor]
+    B --> C[(InfluxDB)]
+    C --> D[Flask API]
+    E[React Frontend] <--> F[Nginx]
+    F <--> D
 ```
 
-GTFS-RT Feeds → ingestion pipeline → InfluxDB → Flask API → Nginx + Gunicorn → Leaflet frontend
+| Layer | Technology | Role |
+| :--- | :--- | :--- |
+| **Frontend** | React, TypeScript, Vite | Component-based UI & State Management |
+| **API** | Python, Flask, Gunicorn | RESTful endpoints & Data Orchestration |
+| **Database** | InfluxDB (Flux/FluxQL) | Time-series persistence & Analytics |
+| **Ingestion** | Python (Requests/Protobuf) | Feed normalization & Spatial processing |
+| **Gateway** | Nginx | Reverse Proxy, SSL, & Static File Delivery |
 
-```
+---
 
-| Layer           | Role                                            |
-|-----------------|-------------------------------------------------|
-| Ingestion       | Pull + normalize GTFS-RT feeds                  |
-| Storage         | Persist telemetry as time-series data           |
-| API             | Serve real-time + historical queries            |
-| Frontend        | Visualize vehicles and stops                    |
-| Infrastructure  | Serve reliably in production                    |
+## Technical Stack
 
-## Technology Stack
+### Frontend (The Dashboard)
+- **React 18 & TypeScript:** Built for type safety and component reusability.
+- **Leaflet:** Managed via `react-leaflet` for reactive map interactions.
+- **Vite:** Modern build toolchain for optimized production assets.
+- **Axios:** Efficient polling and data fetching with custom error handling.
 
-**Backend**
-- Python  
-- Flask  
-- InfluxDB  
+### Backend (The Engine)
+- **Flask:** Lightweight API serving real-time vehicle positions and InfluxDB aggregates.
+- **InfluxDB:** Optimized schema handling high-write telemetry throughput.
+- **GTFS-Realtime:** Protocol buffer ingestion and normalization.
 
-**Frontend**
-- Leaflet.js  
-- Vanilla JavaScript  
+### Infrastructure
+- **Vultr VPS:** Cloud-based Debian environment.
+- **Nginx:** Configured as a reverse proxy to bridge the decoupled React frontend and Flask API.
+- **Systemd:** Process management and service reliability.
 
-**Infrastructure**
-- Debian VPS  
-- Gunicorn  
-- Nginx  
-- systemd  
+---
 
-## Data Ingestion
+## Data Engineering & Storage
 
-WIMBAC ingests GTFS-Realtime feeds from the Greater Cleveland RTA.
+WIMBAC treats transit data as a continuous stream. By utilizing **InfluxDB**, we can perform complex temporal queries (e.g., "What was the average delay at Stop X over the last 14 days?") that traditional SQL databases struggle with at scale.
 
-Merged feeds:
+**Measurement:** `vehicle_status`
+- **Tags (Indexed):** `vehicle_id`, `route_id`, `trip_id`, `next_stop_id`
+- **Fields:** `lat`, `lon`
 
-| Feed              | Data                  |
-|-------------------|-----------------------|
-| Vehicle Positions | latitude, longitude   |
-| Trip Updates      | route, stop, schedule |
+*Note: Migrated `trip_id` from field to tag in March 2026 to optimize query performance and series cardinality.*
 
-Normalized record:
+---
 
-```
-{
-vehicle_id
-route_id
-next_stop_id
-lat
-lon
-timestamp
-}
-```
+## Deployment Pattern
 
-## Storage (InfluxDB)
+WIMBAC uses a **Single-Origin Proxy** architecture. Nginx acts as the primary entry point:
+1. **Static Assets:** Nginx serves the compiled React `dist/` folder directly for maximum speed.
+2. **API Handshake:** Requests to `/api/*` are transparently proxied to Gunicorn, keeping the backend protected and solving CORS issues at the infrastructure level.
 
-Measurement: `vehicle_status`
-
-**Tags**
-- vehicle_id  
-- route_id  
-- next_stop_id  
-
-**Fields**
-- lat  
-- lon  
-
-Supports:
-- latest vehicle positions  
-- time-window queries  
-- route/stop analytics (in progress)  
-
-## API
-
-Example:
-
-```
-/api/nearest_vehicles?lat=41.49&lon=-81.69
-
-```
-
-### Spatial Search
-
-- In-memory dataset  
-- Haversine distance  
-- Sorted nearest-neighbor results  
-
-Chosen for simplicity given current scale (tens–hundreds of vehicles).
-
-## System Behavior
-
-- GTFS ingestion runs asynchronously  
-- API reads from in-memory cache (real-time)  
-- Historical queries use InfluxDB  
-
-This removes feed processing from request paths and stabilizes latency.
-
-## Frontend
-
-- Leaflet-based map centered on Cleveland  
-- Stop markers + interactive selection  
-- Nearby vehicles highlighted  
-- Periodic refresh via API  
-
-## Deployment
-
-| Component | Role               |
-|----------|--------------------|
-| Nginx    | Reverse proxy      |
-| Gunicorn | WSGI server        |
-| Flask    | Application logic  |
-| InfluxDB | Data storage       |
-
-## Performance (Summary)
-
-- Stable performance under 100 concurrent users  
-- 0% error rate across all tests  
-- ~45× latency reduction after caching  
-
-See:
-- `/docs/caching.md`  
-- `/docs/load-testing.md`  
+---
 
 ## Design Principles
 
-- Keep the system understandable end-to-end  
-- Avoid premature infrastructure  
-- Build components to be replaceable  
+- **Decoupling:** Frontend and Backend are strictly separated, allowing for independent scaling and testing.
+- **Type Safety:** Using TypeScript interfaces to define data contracts between the InfluxDB results and the UI.
+- **Visibility:** Built-in logging and status checks to monitor feed health and database ingestion rates.
 
 ## Next Steps
-
-- Add route and stop-level analytics  
-- Implement on-time performance metrics  
-- Improve frontend interactions  
-- Add filtering and clustering  
-- Introduce monitoring dashboards  
-```
+- **Visual Analytics:** Implement Recharts for stop-level reliability trends.
+- **Mobile Optimization:** Refactor popups into a slide-in bottom sheet for better mobile UX.
+- **Clustering:** Add Leaflet marker clustering for system-wide views.
+- **AWS Migration:** Evaluating transition to EC2 and Managed InfluxDB for increased uptime.
