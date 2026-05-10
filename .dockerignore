@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*.egg-info/
+*.egg
+.venv
+venv
+
+# Env / secrets
+.env
+.env.*
+influx_token.txt
+
+# Git
+.git
+.gitignore
+
+# Node / frontend
+node_modules/
+frontend/node_modules/
+dist/
+build/
+
+# Logs
+*.log
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Testing / artifacts
+loadtest_artifacts/*
+!loadtest_artifacts/results/
+
+# Raw GTFS data
+data/raw/
+*.zip
+
+# Influx backups (these can get huge)
+influx_backups/
+
+# Docker-related (avoid recursion weirdness)
+docker-compose.yml
+Dockerfile
+
+# Editor / IDE
+.vscode/
+.idea/
+
+# Misc
+*.sqlite
+*.db
