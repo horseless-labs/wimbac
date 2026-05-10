@@ -36,8 +36,8 @@ loadtest_artifacts/*
 !loadtest_artifacts/results/
 
 # Raw GTFS data
-data/raw/
-*.zip
+# data/raw/
+# *.zip
 
 # Influx backups (these can get huge)
 influx_backups/
