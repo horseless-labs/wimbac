@@ -14,7 +14,7 @@ from services.stop_event_state import (
 stop_event_tracker = StopEventTracker(on_time_threshold_seconds=60)
 
 # InfluxDB Config
-org = os.getenv("INFLUX_ORG", "Horseless Labs")
+org = os.getenv("INFLUX_ORG", "Horseless Labs").strip('"').strip("'")
 bucket = os.getenv("INFLUX_BUCKET", "wimbac")
 influx_token = os.getenv("INFLUX_TOKEN")
 
